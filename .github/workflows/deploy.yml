@@ -5,6 +5,7 @@ name: Build & deploy to Azure
 #              az ad sp create-for-rbac --sdk-auth --role Contributor \
 #                --scopes /subscriptions/<sub-id>/resourceGroups/cable-web-rg
 #   Variables: AZ_RG, AZ_ACR, AZ_APP  (+ optional AZ_IMAGE, default cableweb:latest)
+# AZ_APP is the Container App name; AZ_ACR the registry name (no .azurecr.io suffix).
 on:
   push:
     branches: [main]
@@ -28,5 +29,12 @@ jobs:
             --image "${{ vars.AZ_IMAGE || 'cableweb:latest' }}" \
             --file Dockerfile .
 
-      - name: Restart Web App to pull the new image
-        run: az webapp restart -g "${{ vars.AZ_RG }}" -n "${{ vars.AZ_APP }}"
+      - name: Roll the Container App to the new image
+        # --revision-suffix forces a new revision so the rebuilt :latest tag is
+        # actually re-pulled (unchanged --image alone is a no-op in Single mode).
+        run: |
+          LOGIN=$(az acr show -n "${{ vars.AZ_ACR }}" --query loginServer -o tsv)
+          az containerapp update \
+            -g "${{ vars.AZ_RG }}" -n "${{ vars.AZ_APP }}" \
+            --image "${LOGIN}/${{ vars.AZ_IMAGE || 'cableweb:latest' }}" \
+            --revision-suffix "r${{ github.run_number }}"

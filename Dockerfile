@@ -1,4 +1,4 @@
-# Cable Web — production image for Azure App Service for Containers.
+# Cable Web — production image for Azure Container Apps.
 # Bundles LibreOffice (headless DOCX->PDF) + the Jost fonts + the calc engines,
 # so the container is self-contained. Built in the cloud via `az acr build`.
 FROM python:3.12-slim
@@ -25,12 +25,13 @@ RUN fc-cache -f
 COPY app ./app
 COPY engines ./engines
 
-# Runtime config. DATA_DIR / UPLOAD_DIR point at the App Service persistent
-# /home mount (enabled via WEBSITES_ENABLE_APP_SERVICE_STORAGE=true).
+# Runtime config. DATA_DIR / UPLOAD_DIR default to the Azure Files share mounted
+# at /data in Container Apps (the deploy manifest sets these explicitly too).
+# HOME=/tmp keeps the LibreOffice profile on fast local disk, not the SMB share.
 ENV PYTHONUNBUFFERED=1 \
     ENGINE_DIR=/app/engines \
-    DATA_DIR=/home/data \
-    UPLOAD_DIR=/home/uploads \
+    DATA_DIR=/data \
+    UPLOAD_DIR=/data/uploads \
     COOKIE_SECURE=true \
     HOME=/tmp \
     PORT=8000

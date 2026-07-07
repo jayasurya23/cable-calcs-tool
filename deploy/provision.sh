@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# One-time Azure provisioning for Cable Web (App Service for Containers + ACR +
-# PostgreSQL Flexible Server). Idempotent — safe to re-run. Run from cable-web/:
+# One-time Azure provisioning for Cable Web on **Azure Container Apps** (Consumption)
+# + Azure Container Registry + PostgreSQL Flexible Server + Azure Files (docs).
+# Same hosting model as the QAQC automation site: no fixed App Service plan, and
+# the app scales to zero when idle. Idempotent — safe to re-run. Run from cable-web/:
 #     bash deploy/provision.sh
-# Requires: az CLI logged in (az login), deploy/config.env filled in.
+# Requires: az CLI logged in (az login) with the containerapp extension, and
+# deploy/config.env filled in.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source deploy/config.env
 
 [ -n "${PG_PASSWORD:-}" ] || { echo "ERROR: set PG_PASSWORD in deploy/config.env"; exit 1; }
 echo "Subscription: $(az account show --query name -o tsv)"
-echo "Provisioning RG=$RG  ACR=$ACR  APP=$APP  PG=$PG_SERVER  in $LOCATION"
+echo "Provisioning RG=$RG  ENV=$ENV  APP=$APP  ACR=$ACR  PG=$PG_SERVER  in $LOCATION"
 echo
 
 exists() { az "$@" >/dev/null 2>&1; }
@@ -25,7 +28,7 @@ urlencode() {
 # 1) Resource group
 az group create -n "$RG" -l "$LOCATION" -o none
 
-# 2) Container registry (admin enabled so App Service can pull with creds)
+# 2) Container registry (admin enabled so Container Apps can pull with creds)
 if ! exists acr show -n "$ACR"; then
   az acr create -g "$RG" -n "$ACR" --sku Basic --admin-enabled true -o none
 fi
@@ -35,67 +38,174 @@ echo "Building image ${ACR}.azurecr.io/${IMAGE} (this takes a few minutes)…"
 az acr build --registry "$ACR" --image "$IMAGE" --file Dockerfile . -o none
 
 # 4) PostgreSQL Flexible Server + database.
-#    --public-access 0.0.0.0 opens the DB to Azure services (not the public
-#    internet). App Service outbound IPs rotate within a shared pool and B1 plans
-#    can't use VNet/Private Link, so this is the standard posture here; the admin
-#    password + enforced TLS (sslmode=require) are the access controls. To lock it
-#    down further, move to a Standard+ plan with VNet integration + a Private
-#    Endpoint for the server (see DEPLOY.md → Notes).
+#    --public-access 0.0.0.0 opens the DB to Azure services (Container Apps included),
+#    not the public internet. Container egress IPs rotate in a shared pool and this
+#    tier can't use VNet, so this is the standard posture; admin password + enforced
+#    TLS (sslmode=require) are the controls. See DEPLOY.md → Notes to lock down further.
 if ! exists postgres flexible-server show -g "$RG" -n "$PG_SERVER"; then
   az postgres flexible-server create -g "$RG" -n "$PG_SERVER" -l "$LOCATION" \
     --tier "$PG_TIER" --sku-name "$PG_SKU" --storage-size 32 --version 16 \
     --admin-user "$PG_ADMIN" --admin-password "$PG_PASSWORD" \
     --public-access 0.0.0.0 --yes -o none
 fi
-# Create the app database. show-then-create keeps this idempotent while still
-# surfacing a genuine create failure (set -e aborts) instead of hiding it.
+# show-then-create keeps this idempotent while still surfacing a genuine create
+# failure (set -e aborts) instead of hiding it.
 if ! exists postgres flexible-server db show -g "$RG" -s "$PG_SERVER" -d "$PG_DB"; then
   az postgres flexible-server db create -g "$RG" -s "$PG_SERVER" -d "$PG_DB" -o none
 fi
 
-# 5) App Service plan (Linux) + Web App for Containers
-if ! exists appservice plan show -g "$RG" -n "$PLAN"; then
-  az appservice plan create -g "$RG" -n "$PLAN" --is-linux --sku "$PLAN_SKU" -o none
+# 5) Storage account + file share for generated documents (persist across replicas
+#    and scale-to-zero cycles; Postgres holds the relational data).
+if ! exists storage account show -g "$RG" -n "$STORAGE_ACCT"; then
+  az storage account create -g "$RG" -n "$STORAGE_ACCT" -l "$LOCATION" \
+    --sku Standard_LRS --kind StorageV2 --min-tls-version TLS1_2 -o none
 fi
+SA_KEY=$(az storage account keys list -g "$RG" -n "$STORAGE_ACCT" --query '[0].value' -o tsv)
+if ! exists storage share-rm show -g "$RG" --storage-account "$STORAGE_ACCT" -n "$SHARE"; then
+  az storage share-rm create -g "$RG" --storage-account "$STORAGE_ACCT" -n "$SHARE" \
+    --quota 16 -o none
+fi
+
+# 6) Container Apps environment (auto-provisions a Log Analytics workspace)
+if ! exists containerapp env show -g "$RG" -n "$ENV"; then
+  az containerapp env create -g "$RG" -n "$ENV" -l "$LOCATION" -o none
+fi
+# Wait until the environment is ready — bounded (~10 min) and abort on a terminal
+# failure state or persistent CLI error instead of looping forever.
+echo "Waiting for environment to be ready…"
+STATE=""; tries=0
+while [ "$tries" -lt 60 ]; do
+  STATE=$(az containerapp env show -g "$RG" -n "$ENV" --query 'properties.provisioningState' -o tsv 2>/dev/null || echo "")
+  case "$STATE" in
+    Succeeded) break ;;
+    Failed|Canceled) echo "ERROR: environment provisioning ended in state '$STATE'"; exit 1 ;;
+  esac
+  tries=$((tries + 1)); sleep 10
+done
+[ "$STATE" = "Succeeded" ] || { echo "ERROR: environment not ready after ~10 min (last state='${STATE:-unknown}')"; exit 1; }
+
+# 7) Attach the file share to the environment under the logical name 'cablewebdocs'
+#    (referenced by the app's volume.storageName below).
+az containerapp env storage set -g "$RG" -n "$ENV" --storage-name cablewebdocs \
+  --azure-file-account-name "$STORAGE_ACCT" --azure-file-account-key "$SA_KEY" \
+  --azure-file-share-name "$SHARE" --access-mode ReadWrite -o none
+
+# 8) Resolve identifiers + build the connection string.
+ENV_ID=$(az containerapp env show -g "$RG" -n "$ENV" --query id -o tsv)
 ACR_LOGIN=$(az acr show -n "$ACR" --query loginServer -o tsv)
 ACR_USER=$(az acr credential show -n "$ACR" --query username -o tsv)
 ACR_PASS=$(az acr credential show -n "$ACR" --query 'passwords[0].value' -o tsv)
-if ! exists webapp show -g "$RG" -n "$APP"; then
-  az webapp create -g "$RG" -p "$PLAN" -n "$APP" \
-    --deployment-container-image-name "${ACR_LOGIN}/${IMAGE}" -o none
-fi
-az webapp config container set -g "$RG" -n "$APP" \
-  --docker-custom-image-name "${ACR_LOGIN}/${IMAGE}" \
-  --docker-registry-server-url "https://${ACR_LOGIN}" \
-  --docker-registry-server-user "$ACR_USER" \
-  --docker-registry-server-password "$ACR_PASS" -o none
-
-# 6) App settings (env). /home persists across restarts for docs + uploads.
 PG_HOST="${PG_SERVER}.postgres.database.azure.com"
 PG_PASSWORD_ENC="$(urlencode "$PG_PASSWORD")"
 DATABASE_URL="postgresql+psycopg://${PG_ADMIN}:${PG_PASSWORD_ENC}@${PG_HOST}:5432/${PG_DB}?sslmode=require"
-REDIRECT_URI="https://${APP}.azurewebsites.net/auth/callback"
-az webapp config appsettings set -g "$RG" -n "$APP" -o none --settings \
-  WEBSITES_PORT=8000 \
-  WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
-  DATABASE_URL="$DATABASE_URL" \
-  DATA_DIR=/home/data \
-  UPLOAD_DIR=/home/uploads \
-  COOKIE_SECURE=true \
-  AUTH_MODE="${AUTH_MODE}" \
-  ADMIN_EMAILS="${ADMIN_EMAILS}" \
-  ENTRA_TENANT_ID="${ENTRA_TENANT_ID}" \
-  ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID}" \
-  ENTRA_CLIENT_SECRET="${ENTRA_CLIENT_SECRET}" \
-  ENTRA_REDIRECT_URI="$REDIRECT_URI" \
-  SESSION_TTL_HOURS="${SESSION_TTL_HOURS}"
 
-az webapp restart -g "$RG" -n "$APP" -o none
+# 8a) First run only: create the app + volume mount from a minimal manifest. We do
+#     NOT put the (possibly empty) Entra secret or the FQDN-dependent redirect URI
+#     here — those, and all subsequent config changes, are applied imperatively in
+#     8b so re-runs actually take effect (`az containerapp update --yaml` only
+#     reconciles template:, not configuration.secrets/ingress/registries).
+if ! exists containerapp show -g "$RG" -n "$APP"; then
+  MANIFEST="$(mktemp)"
+  trap 'rm -f "$MANIFEST"' EXIT
+  cat > "$MANIFEST" <<YAML
+location: ${LOCATION}
+name: ${APP}
+type: Microsoft.App/containerApps
+properties:
+  managedEnvironmentId: ${ENV_ID}
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 8000
+      transport: auto
+      allowInsecure: false
+    secrets:
+      - name: database-url
+        value: "${DATABASE_URL}"
+      - name: acr-password
+        value: "${ACR_PASS}"
+    registries:
+      - server: ${ACR_LOGIN}
+        username: ${ACR_USER}
+        passwordSecretRef: acr-password
+  template:
+    containers:
+      - name: cableweb
+        image: ${ACR_LOGIN}/${IMAGE}
+        resources:
+          cpu: ${CPU}
+          memory: ${MEMORY}
+        env:
+          - name: DATABASE_URL
+            secretRef: database-url
+          - name: DATA_DIR
+            value: /data
+          - name: UPLOAD_DIR
+            value: /data/uploads
+        volumeMounts:
+          - volumeName: docs
+            mountPath: /data
+    scale:
+      minReplicas: ${MIN_REPLICAS}
+      maxReplicas: ${MAX_REPLICAS}
+    volumes:
+      - name: docs
+        storageType: AzureFile
+        storageName: cablewebdocs
+YAML
+  az containerapp create -g "$RG" -n "$APP" --yaml "$MANIFEST" -o none
+  rm -f "$MANIFEST"; trap - EXIT
+fi
+
+# 8b) Reconcile ALL config imperatively — runs on both first-create and re-runs, so
+#     a later `AUTH_MODE=entra` re-run actually updates secrets + env.
+# Secrets: DB URL + ACR password always; Entra secret only when provided (Azure
+# rejects empty-valued secrets).
+SECRETS=( "database-url=${DATABASE_URL}" "acr-password=${ACR_PASS}" )
+if [ -n "${ENTRA_CLIENT_SECRET:-}" ]; then
+  SECRETS+=( "entra-client-secret=${ENTRA_CLIENT_SECRET}" )
+fi
+az containerapp secret set -g "$RG" -n "$APP" --secrets "${SECRETS[@]}" -o none
+# The registry itself is configured once in the create manifest (registries[] ->
+# passwordSecretRef: acr-password). It references the secret by name, so refreshing
+# the 'acr-password' secret value above is all that's needed if the ACR creds rotate
+# — no separate 'registry set' call (and its flags) required.
+
+# FQDN exists once ingress is created; use it for the Entra redirect URI so M365
+# sign-in doesn't fall back to the localhost default.
+FQDN=$(az containerapp show -g "$RG" -n "$APP" --query 'properties.configuration.ingress.fqdn' -o tsv)
+REDIRECT_URI="https://${FQDN}/auth/callback"
+
+# Always-meaningful vars. Possibly-empty ones (admin/entra) are added only when set,
+# so we never pass a bare "KEY=" to --set-env-vars.
+ENVVARS=(
+  "DATA_DIR=/data"
+  "UPLOAD_DIR=/data/uploads"
+  "COOKIE_SECURE=true"
+  "PORT=8000"
+  "AUTH_MODE=${AUTH_MODE}"
+  "ENTRA_REDIRECT_URI=${REDIRECT_URI}"
+  "SESSION_TTL_HOURS=${SESSION_TTL_HOURS}"
+  "DATABASE_URL=secretref:database-url"
+)
+if [ -n "${ADMIN_EMAILS:-}" ];       then ENVVARS+=( "ADMIN_EMAILS=${ADMIN_EMAILS}" ); fi
+if [ -n "${ENTRA_TENANT_ID:-}" ];    then ENVVARS+=( "ENTRA_TENANT_ID=${ENTRA_TENANT_ID}" ); fi
+if [ -n "${ENTRA_CLIENT_ID:-}" ];    then ENVVARS+=( "ENTRA_CLIENT_ID=${ENTRA_CLIENT_ID}" ); fi
+if [ -n "${ENTRA_CLIENT_SECRET:-}" ]; then ENVVARS+=( "ENTRA_CLIENT_SECRET=secretref:entra-client-secret" ); fi
+# --revision-suffix forces a NEW revision every run, so the freshly built image tag
+# is actually re-pulled (an unchanged :latest string alone would be a no-op).
+az containerapp update -g "$RG" -n "$APP" \
+  --image "${ACR_LOGIN}/${IMAGE}" \
+  --cpu "$CPU" --memory "$MEMORY" \
+  --min-replicas "$MIN_REPLICAS" --max-replicas "$MAX_REPLICAS" \
+  --set-env-vars "${ENVVARS[@]}" \
+  --revision-suffix "r$(date +%Y%m%d%H%M%S)" -o none
 
 echo
 echo "✅ Done."
-echo "   App:      https://${APP}.azurewebsites.net"
-echo "   Health:   https://${APP}.azurewebsites.net/health"
+echo "   App:      https://${FQDN}"
+echo "   Health:   https://${FQDN}/health"
 if [ "${AUTH_MODE}" = "local" ]; then
   echo "   Sign in:  open the app and complete /setup to create the admin."
 else
