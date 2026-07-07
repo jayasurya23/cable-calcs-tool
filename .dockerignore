@@ -1,0 +1,21 @@
+# Only app/, engines/, requirements.txt are COPYd into the image; the rest is
+# excluded from the build context to keep the `az acr build` upload small.
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.git/
+.github/
+uploads/
+data/
+deploy/
+DEPLOY.md
+README.md
+run_dev.ps1
+startup.sh
+# Reference/test spreadsheets that live in the repo root (NOT the report
+# template under app/modules/sam_report/assets/, which must ship).
+/*.xlsx
+/*.docx
+!app/modules/sam_report/assets/report_template.docx

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Projects — Cable Web{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>Projects</h1>
+  <p class="subtitle">Each project holds its cover-sheet details and the full revision history of generated documents.</p>
+</section>
+
+<form method="post" action="/projects" class="new-project-form">
+  <input name="name" placeholder="New project name (e.g. Franklin Solar, LLC)" required>
+  <input name="code" placeholder="Project ID (e.g. 259-034)" style="max-width:160px">
+  <button class="btn btn-primary">+ Create project</button>
+</form>
+
+<div class="cards" style="margin-top:20px">
+  {% for p in projects %}
+  <a class="card" href="/projects/{{ p.id }}">
+    <div class="card-head">
+      <h2>{{ p.name }}</h2>
+      {% if p.status == "active" %}<span class="pill pill-ok">active</span>
+      {% else %}<span class="pill pill-muted">archived</span>{% endif %}
+    </div>
+    <p>{% if p.code %}ID {{ p.code }} · {% endif %}{{ p.revisions | length }} revision{{ "s" if p.revisions | length != 1 }}
+       · created {{ p.created_at.strftime("%Y-%m-%d") }}{% if p.creator %} by {{ p.creator.name }}{% endif %}</p>
+  </a>
+  {% else %}
+  <p class="hint">No projects yet — create the first one above.</p>
+  {% endfor %}
+</div>
+{% endblock %}

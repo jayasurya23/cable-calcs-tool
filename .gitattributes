@@ -1,0 +1,10 @@
+# Normalize line endings. Shell scripts, Dockerfile, and app code must be LF so
+# they run correctly in the Linux container / Azure Cloud Shell. Only Windows
+# helpers keep CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.ttf binary
+*.docx binary
+*.xlsx binary
+*.png binary

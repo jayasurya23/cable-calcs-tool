@@ -1,0 +1,91 @@
+"""
+DOCX -> PDF conversion.
+
+Prefers LibreOffice (`soffice`), which is the right choice on Azure Linux and
+also updates Word fields (TOC page numbers, PAGE) during conversion. Falls back
+to Microsoft Word via COM on a Windows box that has Word but not LibreOffice
+(handy for local dev). Both run in a subprocess so they're isolated from the
+web worker.
+"""
+from __future__ import annotations
+
+import os
+import platform
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+# Common LibreOffice locations to probe beyond PATH.
+_SOFFICE_CANDIDATES = [
+    "soffice", "libreoffice",
+    r"C:\Program Files\LibreOffice\program\soffice.exe",
+    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    "/usr/bin/soffice", "/usr/bin/libreoffice",
+    "/opt/libreoffice/program/soffice",
+]
+
+
+def _find_soffice() -> str | None:
+    override = os.environ.get("SOFFICE_PATH")
+    if override and Path(override).exists():
+        return override
+    for cand in _SOFFICE_CANDIDATES:
+        found = shutil.which(cand) if os.path.basename(cand) == cand else (
+            cand if Path(cand).exists() else None)
+        if found:
+            return found
+    return None
+
+
+def _convert_soffice(soffice: str, docx_path: Path, out_pdf: Path) -> None:
+    with tempfile.TemporaryDirectory() as outdir:
+        # A dedicated user profile avoids clashes when several workers convert at once.
+        profile = Path(outdir) / "profile"
+        subprocess.run(
+            [soffice, "--headless", "--norestore",
+             f"-env:UserInstallation=file:///{profile.as_posix()}",
+             "--convert-to", "pdf", "--outdir", outdir, str(docx_path)],
+            check=True, capture_output=True, timeout=120,
+        )
+        produced = Path(outdir) / (docx_path.stem + ".pdf")
+        if not produced.exists():
+            raise RuntimeError("LibreOffice did not produce a PDF")
+        shutil.move(str(produced), str(out_pdf))
+
+
+def _ps_quote(path: Path) -> str:
+    """Escape a path for a PowerShell single-quoted literal (double the quotes)."""
+    return str(path).replace("'", "''")
+
+
+def _convert_word(docx_path: Path, out_pdf: Path) -> None:
+    """Windows-only fallback via Word COM, driven by a PowerShell subprocess."""
+    docx_q = _ps_quote(docx_path)
+    pdf_q = _ps_quote(out_pdf)
+    ps = (
+        "$w=New-Object -ComObject Word.Application; $w.Visible=$false; "
+        f"$d=$w.Documents.Open('{docx_q}',$false,$true); "
+        "try { $d.Fields.Update() | Out-Null; "
+        "if($d.TablesOfContents.Count -gt 0){$d.TablesOfContents.Item(1).Update()} } catch {} ; "
+        f"$d.SaveAs([ref]'{pdf_q}',[ref]17); $d.Close($false); $w.Quit()"
+    )
+    subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                   check=True, capture_output=True, timeout=180)
+    if not out_pdf.exists():
+        raise RuntimeError("Word did not produce a PDF")
+
+
+def docx_to_pdf(docx_path: str | Path, out_pdf: str | Path) -> Path:
+    docx_path, out_pdf = Path(docx_path), Path(out_pdf)
+    soffice = _find_soffice()
+    if soffice:
+        _convert_soffice(soffice, docx_path, out_pdf)
+    elif platform.system() == "Windows":
+        _convert_word(docx_path, out_pdf)
+    else:
+        raise RuntimeError(
+            "No DOCX->PDF converter found. Install LibreOffice (soffice) — "
+            "`playwright`/Chromium is not used for the .docx pipeline."
+        )
+    return out_pdf

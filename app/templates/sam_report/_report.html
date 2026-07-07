@@ -1,0 +1,119 @@
+{# Report fragment — returned from POST /sam/upload and swapped into #report. #}
+<div class="report">
+  <div class="report-head">
+    <h2>Report</h2>
+    <div class="meta">
+      <span>Workbook: <strong>{{ report.source_workbook }}</strong></span>
+      {% if report.source_pysam %}
+        <span>pysam: <strong>{{ report.source_pysam }}</strong></span>
+      {% endif %}
+      <span>Upload ID: <code>{{ report.upload_id }}</code></span>
+      <span>Engines:
+        {% if report.engines_available %}
+          <span class="pill pill-ok">loaded</span>
+        {% else %}
+          <span class="pill pill-warn">not loaded</span>
+        {% endif %}
+      </span>
+    </div>
+  </div>
+
+  {% if report.warnings %}
+  <div class="warnings">
+    {% for w in report.warnings %}
+      <div class="warning">⚠ {{ w }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if report.equipment and report.equipment.has_content %}
+  {% set eq = report.equipment %}
+  {# Display-only: the SAM-derived equipment. Product names are edited on the
+     report form (Module / Inverter model fields), which is the single source. #}
+  <h3>Equipment <span class="dims">(from pysam JSON)</span></h3>
+  <div class="equip-grid">
+    <div class="equip-card">
+      <div class="equip-label">Module</div>
+      <div class="equip-value">{{ eq.module_model or eq.module_model_type or "—" }}</div>
+      {% if eq.module_model and eq.module_model_type %}<div class="equip-sub">{{ eq.module_model_type }}</div>{% endif %}
+      {% if eq.module_specs %}
+      <div class="spec-chips">
+        {% for k, v in eq.module_specs.items() %}<span class="chip"><b>{{ k }}</b> {{ v }}</span>{% endfor %}
+      </div>{% endif %}
+    </div>
+    <div class="equip-card">
+      <div class="equip-label">Inverter</div>
+      <div class="equip-value">{{ eq.inverter_model or eq.inverter_model_type or "—" }}</div>
+      {% if eq.inverter_model and eq.inverter_model_type %}<div class="equip-sub">{{ eq.inverter_model_type }}</div>{% endif %}
+      {% if eq.inverter_specs %}
+      <div class="spec-chips">
+        {% for k, v in eq.inverter_specs.items() %}<span class="chip"><b>{{ k }}</b> {{ v }}</span>{% endfor %}
+      </div>{% endif %}
+    </div>
+  </div>
+  {% for n in eq.notes %}<p class="hint">ℹ {{ n }} Set the product names on the report form below.</p>{% endfor %}
+  {% endif %}
+
+  {% if report.table_columns %}
+  <div class="section-head">
+    <h3>Output table <span class="dims">({{ report.runs | length }} runs,
+      {{ report.runs[0].year }}–{{ report.runs[-1].year }})</span></h3>
+    {% if report.output_filename %}
+    <a class="btn btn-primary btn-download"
+       href="/sam/download/{{ report.upload_id }}/{{ report.output_filename | urlencode }}"
+       download>⬇ Download workbook with Output sheet</a>
+    {% endif %}
+  </div>
+  <div class="table-wrap table-output">
+    <table class="data-table">
+      <thead>
+        <tr>{% for c in report.table_columns %}<th>{{ c }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for row in report.table_rows %}
+        <tr {% if row.cells.get(report.table_columns[0]) == "Maximum" %}class="row-max"{% endif %}>
+          {% for c in report.table_columns %}<td>{{ row.cells.get(c, "") }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if report.runs %}
+  <div class="report-generate" id="report-generate">
+    <button type="button" class="btn btn-primary btn-lg"
+            onclick="var b=document.getElementById('report-builder'); b.hidden=false;
+                     this.closest('#report-generate').style.display='none';
+                     b.scrollIntoView({behavior:'smooth', block:'start'});">Generate report</button>
+    <span class="hint">Fill the report details below → full preview → PDF / Word.</span>
+  </div>
+  {# Form is rendered inline (hidden) during Analyze so it reveals instantly. #}
+  <div id="report-builder" hidden>
+    {% include "sam_report/_report_form.html" %}
+  </div>
+  {% endif %}
+
+  <h3>Workbook contents</h3>
+  <p class="hint">Raw preview of every sheet (first rows).</p>
+
+  {% for sheet in report.sheets %}
+  <details class="sheet" {% if loop.first %}open{% endif %}>
+    <summary>{{ sheet.name }} <span class="dims">({{ sheet.n_rows }} rows × {{ sheet.n_cols }} cols)</span></summary>
+    <div class="table-wrap">
+      <table class="data-table">
+        {% if sheet.header %}
+        <thead>
+          <tr>{% for h in sheet.header %}<th>{{ h }}</th>{% endfor %}</tr>
+        </thead>
+        {% endif %}
+        <tbody>
+          {% for r in sheet.sample_rows %}
+          <tr>{% for cell in r %}<td>{{ cell }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}SAM Analysis Reports{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>SAM Analysis
+    <span class="dims">· <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a>
+    {% if project_rec.code %}({{ project_rec.code }}){% endif %}</span>
+  </h1>
+  <p class="subtitle">
+    Upload the runs workbook exported from your SAM analysis. Optionally attach
+    the pysam JSON (SAM &rarr; Generate code &rarr; JSON for inputs) for extra
+    case detail. The generated report is filed under this project as a revision.
+  </p>
+</section>
+
+<form class="upload-form"
+      hx-post="/sam/upload"
+      hx-target="#report"
+      hx-swap="innerHTML"
+      hx-encoding="multipart/form-data"
+      hx-indicator="#spinner">
+  <input type="hidden" name="project_id" value="{{ project_rec.id }}">
+  <div class="field">
+    <label for="workbook">Runs workbook <span class="req">*</span></label>
+    <input type="file" id="workbook" name="workbook" accept=".xlsx,.xlsm" required />
+    <small>Excel with all SAM runs (.xlsx / .xlsm).</small>
+  </div>
+
+  <div class="field">
+    <label for="pysam">pysam JSON <span class="opt">(optional)</span></label>
+    <input type="file" id="pysam" name="pysam" accept=".json" />
+    <small>SAM case-inputs JSON, if you have it.</small>
+  </div>
+
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Analyze</button>
+    <span id="spinner" class="htmx-indicator spinner">Analyzing…</span>
+  </div>
+</form>
+
+<section id="report" class="report-slot">
+  <!-- HTMX swaps the report fragment in here after upload. -->
+</section>
+{% endblock %}

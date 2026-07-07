@@ -1,0 +1,75 @@
+{# Report form — shown after "Generate report". Auto-filled fields come from the
+   Excel (year range / runs / modules) and pysam (coordinates / GCR / mps). #}
+<form id="report-form" class="report-form"
+      hx-post="/sam/report/{{ upload_id }}/generate"
+      hx-target="#report-preview" hx-swap="innerHTML"
+      hx-encoding="multipart/form-data" hx-indicator="#gen-spin">
+
+  <h3>Report details</h3>
+  <div class="form-grid">
+    <label>Project name<input name="project_name" value="{{ project.project_name }}"></label>
+    <label>Project ID<input name="project_id" value="{{ project.project_id }}" placeholder="e.g. 259-034"></label>
+    <label>Date<input name="date" value="{{ project.date }}"></label>
+    <label>Revision
+      <select name="revision">
+        {% for r in ['0','1','2','3'] %}<option value="{{ r }}" {% if project.revision == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <h4>Project information <span class="dims">(pre-filled from pysam)</span></h4>
+  <div class="form-grid">
+    <label>Coordinates<input name="coordinates" value="{{ project.coordinates }}" placeholder="lat, lon"></label>
+    <label>GCR<input name="gcr" value="{{ project.gcr }}"></label>
+    <label>Modules per string<input name="modules_per_string" value="{{ project.modules_per_string }}"></label>
+    <label>Module model<input name="module_model" value="{{ project.module_model }}"></label>
+    <label>Inverter model<input name="inverter_model" value="{{ project.inverter_model }}"></label>
+    <label>DC/AC ratio<input name="dc_ac_ratio" value="{{ project.dc_ac_ratio }}"></label>
+    <label>System size (DC)<input name="system_size_dc" value="{{ project.system_size_dc }}"></label>
+  </div>
+
+  <h4>Inputs <span class="dims">(albedo pre-filled from pysam — edit if needed)</span></h4>
+  <label class="field-full">Albedo statement
+    <textarea name="albedo_text" rows="3">{{ project.albedo_text }}</textarea>
+  </label>
+
+  <h4>Cover sheet</h4>
+  <div class="form-grid">
+    <label>Owner<input name="owner_name" value="{{ project.owner_name }}"></label>
+    <label>Owner phone<input name="owner_phone" value="{{ project.owner_phone }}"></label>
+    <label>EPC<input name="epc_name" value="{{ project.epc_name }}"></label>
+    <label>EPC phone<input name="epc_phone" value="{{ project.epc_phone }}"></label>
+    <label>Engineering firm<input name="eng_firm_name" value="{{ project.eng_firm_name }}"></label>
+    <label>Engineering firm phone<input name="eng_firm_phone" value="{{ project.eng_firm_phone }}"></label>
+    <label>EOR<input name="eor" value="{{ project.eor }}" placeholder="Name, PE#"></label>
+    <label>Designer<input name="designer" value="{{ project.designer }}"></label>
+    <label>Check<input name="checker" value="{{ project.checker }}"></label>
+  </div>
+
+  <h4>Modules <span class="dims">(one Excel per module — module 1 is this upload)</span></h4>
+  <div id="modules-section">
+    {% include "sam_report/_report_form_modules.html" %}
+  </div>
+
+  {% if next_rev is defined %}
+  <h4>Version control</h4>
+  <div class="form-grid">
+    <label>Save as
+      <select name="save_as">
+        <option value="new">New revision (R{{ next_rev }})</option>
+        {% for r in revisions %}
+        <option value="{{ r.rev_number }}">Re-issue R{{ r.rev_number }} ({{ r.updated_at.strftime("%Y-%m-%d") }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Revision label<input name="rev_label" placeholder="e.g. Issued for review"></label>
+  </div>
+  {% endif %}
+
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Preview report</button>
+    <span id="gen-spin" class="htmx-indicator spinner">Generating report… (a few seconds)</span>
+  </div>
+</form>
+
+<div id="report-preview" class="report-preview"></div>

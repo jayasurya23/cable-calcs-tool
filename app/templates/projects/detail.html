@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — Cable Web{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>{{ project.name }}
+    {% if project.code %}<span class="dims">· {{ project.code }}</span>{% endif %}
+    {% if project.status != "active" %}<span class="pill pill-muted">archived</span>{% endif %}
+  </h1>
+  <p class="subtitle">Created {{ project.created_at.strftime("%Y-%m-%d") }}{% if project.creator %} by {{ project.creator.name }}{% endif %}</p>
+</section>
+
+{% if saved %}<div class="notice-ok">✓ Project saved</div>{% endif %}
+
+<div class="report-generate">
+  <a class="btn btn-primary btn-lg" href="/sam?project={{ project.id }}">New SAM analysis</a>
+  <span class="hint">Analyze runs → generate the report → it's filed below as the next revision.</span>
+</div>
+
+<h3>Revisions</h3>
+{% if revisions %}
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr><th>Rev</th><th>Date</th><th>By</th><th>Label</th><th>Re-issues</th><th>Documents</th></tr>
+    </thead>
+    <tbody>
+      {% for r in revisions %}
+      <tr>
+        <td><b>R{{ r.rev_number }}</b></td>
+        <td>{{ r.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ r.creator.name if r.creator else "—" }}</td>
+        <td>{{ r.label }}</td>
+        <td>{{ r.reissue_count if r.reissue_count else "" }}</td>
+        <td>
+          {% for f in rev_files[r.id] %}
+          <a class="doc-link" href="/projects/{{ project.id }}/rev/{{ r.rev_number }}/{{ f | urlencode }}">{{ f }}</a>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="hint">No revisions yet — run a SAM analysis and generate the report.</p>
+{% endif %}
+
+<h3 style="margin-top:28px">Project details <span class="dims">(prefill the report cover sheet)</span></h3>
+<form method="post" action="/projects/{{ project.id }}" class="report-form">
+  <div class="form-grid">
+    <label>Project name<input name="name" value="{{ project.name }}" required></label>
+    <label>Project ID<input name="code" value="{{ project.code }}"></label>
+    <label>Status
+      <select name="status">
+        <option value="active" {% if project.status == "active" %}selected{% endif %}>active</option>
+        <option value="archived" {% if project.status == "archived" %}selected{% endif %}>archived</option>
+      </select>
+    </label>
+    <label>Owner<input name="owner_name" value="{{ project.owner_name }}"></label>
+    <label>Owner phone<input name="owner_phone" value="{{ project.owner_phone }}"></label>
+    <label>EPC<input name="epc_name" value="{{ project.epc_name }}"></label>
+    <label>EPC phone<input name="epc_phone" value="{{ project.epc_phone }}"></label>
+    <label>Engineering firm<input name="eng_firm_name" value="{{ project.eng_firm_name }}"></label>
+    <label>Engineering firm phone<input name="eng_firm_phone" value="{{ project.eng_firm_phone }}"></label>
+    <label>EOR<input name="eor" value="{{ project.eor }}" placeholder="Name, PE#"></label>
+    <label>Designer<input name="designer" value="{{ project.designer }}"></label>
+    <label>Check<input name="checker" value="{{ project.checker }}"></label>
+  </div>
+  <label class="field-full">Notes<textarea name="notes" rows="2">{{ project.notes }}</textarea></label>
+  <div class="actions" style="margin-top:14px">
+    <button class="btn btn-primary btn-sm">Save project</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}{{ app_name | default("Cable Web") }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <!-- HTMX vendored locally (no CDN dependency — works offline / on any network). -->
+  <script src="/static/js/htmx.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-mark">⚡</span>
+      <span class="brand-text">Cable&nbsp;Web</span>
+    </a>
+    <nav class="topnav">
+      {% if user %}
+      <a href="/projects">Projects</a>
+      {% if user.is_admin %}<a href="/admin/users">Users</a>{% endif %}
+      <span class="user-chip" title="{{ user.email }}">{{ user.name or user.email }}</span>
+      <form method="post" action="/logout" class="logout-form"><button type="submit">Sign out</button></form>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>{{ app_name | default("Cable Web") }}</span>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

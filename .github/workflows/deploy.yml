@@ -1,0 +1,32 @@
+name: Build & deploy to Azure
+
+# Ship on every push to main. Requires (Settings → Secrets and variables → Actions):
+#   Secret:    AZURE_CREDENTIALS  — service-principal JSON from:
+#              az ad sp create-for-rbac --sdk-auth --role Contributor \
+#                --scopes /subscriptions/<sub-id>/resourceGroups/cable-web-rg
+#   Variables: AZ_RG, AZ_ACR, AZ_APP  (+ optional AZ_IMAGE, default cableweb:latest)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build image in ACR (cloud build — no Docker on the runner)
+        run: |
+          az acr build \
+            --registry "${{ vars.AZ_ACR }}" \
+            --image "${{ vars.AZ_IMAGE || 'cableweb:latest' }}" \
+            --file Dockerfile .
+
+      - name: Restart Web App to pull the new image
+        run: az webapp restart -g "${{ vars.AZ_RG }}" -n "${{ vars.AZ_APP }}"

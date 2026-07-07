@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Cable Web — Home{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <h1>Cable Web</h1>
+  <p class="subtitle">
+    Web tooling for PV cable design. Starting with SAM analysis reports —
+    the full DC/AC/MV cable-calc suite moves here next.
+  </p>
+  <p class="status-line">
+    Shared calc engines:
+    {% if engines_available %}
+      <span class="pill pill-ok">loaded</span>
+    {% else %}
+      <span class="pill pill-warn">not loaded</span>
+    {% endif %}
+  </p>
+</section>
+
+<section class="cards">
+  {% for m in modules %}
+  <a class="card {% if not m.ready %}card-disabled{% endif %}"
+     href="{{ m.href }}"
+     {% if not m.ready %}aria-disabled="true" onclick="return false;"{% endif %}>
+    <div class="card-head">
+      <h2>{{ m.name }}</h2>
+      {% if m.ready %}
+        <span class="pill pill-ok">Ready</span>
+      {% else %}
+        <span class="pill pill-muted">Soon</span>
+      {% endif %}
+    </div>
+    <p>{{ m.desc }}</p>
+  </a>
+  {% endfor %}
+</section>
+{% endblock %}

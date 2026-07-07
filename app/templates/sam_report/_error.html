@@ -1,0 +1,10 @@
+{# Error fragment — returned from POST /sam/upload when processing fails. #}
+<div class="report">
+  <div class="warnings">
+    <div class="warning">✖ Could not process the upload: {{ message }}</div>
+  </div>
+  <p class="hint">
+    Check that the file is a valid <code>.xlsx</code>/<code>.xlsm</code> workbook
+    exported from your SAM analysis, then try again.
+  </p>
+</div>
