@@ -40,9 +40,13 @@ if ! exists acr show -n "$ACR"; then
   az acr create -g "$RG" -n "$ACR" --sku Basic --admin-enabled true -o none
 fi
 
-# 3) Build the image in the cloud (no local Docker needed)
+# 3) Build the image in the cloud (no local Docker needed).
+#    --no-logs: skip streaming the build logs. On Windows the streamed non-ASCII log
+#    output crashes the CLI (colorama/cp1252 UnicodeEncodeError). --no-logs still
+#    WAITS for the cloud build and returns its real exit code, so a genuine build
+#    failure still aborts here.
 echo "Building image ${ACR}.azurecr.io/${IMAGE} (this takes a few minutes)…"
-az acr build --registry "$ACR" --image "$IMAGE" --file Dockerfile . -o none
+az acr build --registry "$ACR" --image "$IMAGE" --file Dockerfile . --no-logs -o none
 
 # 4) PostgreSQL Flexible Server + database.
 #    --public-access 0.0.0.0 opens the DB to Azure services (Container Apps included),

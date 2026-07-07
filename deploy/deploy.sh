@@ -6,7 +6,9 @@ cd "$(dirname "$0")/.."
 source deploy/config.env
 
 echo "Rebuilding ${ACR}.azurecr.io/${IMAGE} …"
-az acr build --registry "$ACR" --image "$IMAGE" --file Dockerfile . -o none
+# --no-logs avoids the Windows CLI log-streaming crash (colorama/cp1252) while
+# still waiting for the cloud build and returning its real exit code.
+az acr build --registry "$ACR" --image "$IMAGE" --file Dockerfile . --no-logs -o none
 
 ACR_LOGIN=$(az acr show -n "$ACR" --query loginServer -o tsv)
 echo "Rolling ${APP} to the new image …"
