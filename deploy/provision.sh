@@ -10,6 +10,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source deploy/config.env
 
+# Force UTF-8 for the Azure CLI's stdout. On Windows (esp. when output is piped)
+# Python defaults to the cp1252 codec, which crashes `az acr build` with a
+# UnicodeEncodeError while streaming non-ASCII build-log output. Harmless on
+# Linux / Azure Cloud Shell.
+export PYTHONIOENCODING=utf-8
+export PYTHONUTF8=1
+
 [ -n "${PG_PASSWORD:-}" ] || { echo "ERROR: set PG_PASSWORD in deploy/config.env"; exit 1; }
 echo "Subscription: $(az account show --query name -o tsv)"
 echo "Provisioning RG=$RG  ENV=$ENV  APP=$APP  ACR=$ACR  PG=$PG_SERVER  in $LOCATION"
