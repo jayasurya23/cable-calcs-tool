@@ -10,12 +10,8 @@
     <label>Project name<input name="project_name" value="{{ project.project_name }}"></label>
     <label>Project ID<input name="project_id" value="{{ project.project_id }}" placeholder="e.g. 259-034"></label>
     <label>Date<input name="date" value="{{ project.date }}"></label>
-    <label>Revision
-      <select name="revision">
-        {% for r in ['0','1','2','3'] %}<option value="{{ r }}" {% if project.revision == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
-      </select>
-    </label>
   </div>
+  {# The header revision number is set automatically from "Save as" below. #}
 
   <h4>Project information <span class="dims">(pre-filled from pysam)</span></h4>
   <div class="form-grid">
@@ -28,7 +24,11 @@
     <label>System size (DC)<input name="system_size_dc" value="{{ project.system_size_dc }}"></label>
   </div>
 
-  <h4>Inputs <span class="dims">(albedo pre-filled from pysam — edit if needed)</span></h4>
+  <h4>Inputs <span class="dims">(pre-filled from pysam — edit if needed)</span></h4>
+  <label class="field-full">Weather data
+    <input name="weather_file" value="{{ project.weather_file }}"
+           placeholder="NSRDB weather file">
+  </label>
   <label class="field-full">Albedo statement
     <textarea name="albedo_text" rows="3">{{ project.albedo_text }}</textarea>
   </label>

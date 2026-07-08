@@ -198,6 +198,9 @@ def prefill_project(upload_id: str) -> ReportProject:
         dc_ac_ratio=pf["dc_ac_ratio"],
         system_size_dc=pf["system_size_dc"],
         albedo_text=pf["albedo_text"],
+        # Actual NSRDB weather filename when pysam is present, else a generic
+        # reference so the Inputs "Weather Data:" line is never left dangling.
+        weather_file=pf["weather_file"] or "National Solar Radiation Database (NSRDB)",
     )
 
 

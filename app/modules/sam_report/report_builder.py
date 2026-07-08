@@ -81,7 +81,7 @@ def prefill_from_pysam(pysam_data: dict) -> dict:
     """
     out = {"coordinates": "", "gcr": "", "modules_per_string": "", "module_wattage": None,
            "module_model": "", "inverter_model": "", "dc_ac_ratio": "",
-           "system_size_dc": "", "albedo_text": ""}
+           "system_size_dc": "", "albedo_text": "", "weather_file": ""}
     if not pysam_data:
         return out
 
@@ -96,6 +96,11 @@ def prefill_from_pysam(pysam_data: dict) -> dict:
         m = _COORD_RE.search(srf)
         if m:
             out["coordinates"] = f"{m.group(1)}, {m.group(2)}"
+        # The NSRDB weather-file name (basename of the full path) for the
+        # Inputs "Weather Data:" line.
+        name = srf.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+        if name:
+            out["weather_file"] = name
 
     gcr = _num(get("subarray1_gcr"))
     if gcr is not None:

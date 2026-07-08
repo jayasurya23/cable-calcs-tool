@@ -62,6 +62,7 @@ def _tokens(ctx: ReportContext) -> dict[str, str]:
         "«DC_AC_RATIO»": _esc(p.dc_ac_ratio),
         "«SYSTEM_SIZE»": _esc(p.system_size_dc),
         "«ALBEDO_TEXT»": _esc(p.albedo_text),
+        "«WEATHER_FILE»": _esc(p.weather_file),
         "«MODULES_PHRASE»": _esc(_modules_phrase(len(ctx.modules))),
         "«NUM_RUNS»": _esc(ctx.num_runs),
         "«YEAR_START»": _esc(ctx.year_start if ctx.year_start is not None else ""),

@@ -57,6 +57,7 @@ def _project_from_form(form) -> ReportProject:
         dc_ac_ratio=g("dc_ac_ratio"),
         system_size_dc=g("system_size_dc"),
         albedo_text=g("albedo_text"),
+        weather_file=g("weather_file"),
         owner_name=g("owner_name"), owner_phone=g("owner_phone"),
         epc_name=g("epc_name"), epc_phone=g("epc_phone"),
         eng_firm_name=g("eng_firm_name"), eng_firm_phone=g("eng_firm_phone"),
@@ -203,6 +204,22 @@ async def generate_report(request: Request, upload_id: str,
     form = await request.form()
     project = _project_from_form(form)
     labels = _labels_from_form(form)
+
+    # Resolve the project up front so we don't generate a report we can't file.
+    pid = report_service.get_upload_project_id(upload_id)
+    proj_rec = db.get(Project, pid) if pid else None
+    save_as = str(form.get("save_as", "new"))
+    reissue = int(save_as) if save_as.isdigit() else None
+    if proj_rec is None:
+        # Never silently skip filing — the whole point is that documents are saved.
+        return templates.TemplateResponse(
+            request, "sam_report/_error.html",
+            {"message": "The upload is not linked to a project, so the report "
+                        "could not be filed. Start the analysis from a project "
+                        "page and try again."},
+            status_code=500)
+
+    rev = None
     try:
         # DOCX->PDF conversion is sync (subprocess); run off the event loop.
         await run_in_threadpool(
@@ -215,20 +232,7 @@ async def generate_report(request: Request, upload_id: str,
         )
 
     # ── Version control: file the document set under the project ──
-    rev = None
-    pid = report_service.get_upload_project_id(upload_id)
-    proj_rec = db.get(Project, pid) if pid else None
-    if proj_rec is None:
-        # Never silently skip filing — the whole point is that documents are saved.
-        return templates.TemplateResponse(
-            request, "sam_report/_error.html",
-            {"message": "Report generated, but it could not be filed: the upload "
-                        "is not linked to a project. Start the analysis from a "
-                        "project page and try again."},
-            status_code=500)
     if proj_rec is not None:
-        save_as = str(form.get("save_as", "new"))
-        reissue = int(save_as) if save_as.isdigit() else None
         try:
             rev = await run_in_threadpool(
                 storage.save_revision, db, proj_rec, user,

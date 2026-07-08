@@ -57,6 +57,9 @@ class ReportProject(BaseModel):
 
     # Inputs — albedo paragraph, derived from the pysam monthly albedo, editable.
     albedo_text: str = ""
+    # Inputs — weather-data reference (NSRDB), from the pysam solar_resource_file
+    # basename; shown on the "Weather Data:" line of the Inputs section.
+    weather_file: str = ""
 
     # Cover sheet blocks
     owner_name: str = ""
