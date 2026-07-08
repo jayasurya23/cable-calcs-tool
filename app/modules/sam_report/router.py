@@ -1,6 +1,7 @@
 """Routes for the SAM report module."""
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -205,7 +206,10 @@ async def generate_report(request: Request, upload_id: str,
     project = _project_from_form(form)
     labels = _labels_from_form(form)
 
-    # Resolve the project up front so we don't generate a report we can't file.
+    # Resolve the project + the revision this will be filed as BEFORE generating,
+    # so the report header shows the actual number. It's baked into the docx here
+    # and pinned when filing (save_revision(new_rev=...)) so the header can never
+    # disagree with the revision folder it lands in.
     pid = report_service.get_upload_project_id(upload_id)
     proj_rec = db.get(Project, pid) if pid else None
     save_as = str(form.get("save_as", "new"))
@@ -218,6 +222,8 @@ async def generate_report(request: Request, upload_id: str,
                         "could not be filed. Start the analysis from a project "
                         "page and try again."},
             status_code=500)
+    target_rev = reissue if reissue is not None else storage.next_rev_number(db, proj_rec)
+    project.revision = str(target_rev)
 
     rev = None
     try:
@@ -235,10 +241,13 @@ async def generate_report(request: Request, upload_id: str,
     if proj_rec is not None:
         try:
             rev = await run_in_threadpool(
-                storage.save_revision, db, proj_rec, user,
-                report_service.collect_revision_files(upload_id),
-                {k: str(v) for k, v in form.items() if not hasattr(v, "filename")},
-                reissue, str(form.get("rev_label", "")),
+                partial(
+                    storage.save_revision, db, proj_rec, user,
+                    report_service.collect_revision_files(upload_id),
+                    {k: str(v) for k, v in form.items() if not hasattr(v, "filename")},
+                    reissue, str(form.get("rev_label", "")),
+                    new_rev=(None if reissue is not None else target_rev),
+                )
             )
         except Exception as exc:  # noqa: BLE001 - surface but keep the preview usable
             return templates.TemplateResponse(

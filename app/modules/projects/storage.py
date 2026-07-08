@@ -31,11 +31,17 @@ def next_rev_number(db: Session, project: Project) -> int:
 
 def save_revision(db: Session, project: Project, user: User | None,
                   files: list[Path], form_data: dict,
-                  reissue_rev: int | None = None, label: str = "") -> Revision:
+                  reissue_rev: int | None = None, label: str = "",
+                  new_rev: int | None = None) -> Revision:
     """File a document set as a new revision (default) or re-issue an existing one.
 
     Files are staged into a temp directory and atomically swapped in, so a
     mid-copy failure can never destroy a previously issued document set.
+
+    new_rev pins the number for the *new* path: the caller may bake this number
+    into the documents (e.g. the report header) before calling, so we file under
+    exactly it — and if a concurrent save already took it, we raise rather than
+    silently filing under a different number that would mismatch the documents.
     """
     present = {Path(f).name for f in files if Path(f).is_file()}
     missing = REQUIRED_DOCS - present
@@ -49,6 +55,21 @@ def save_revision(db: Session, project: Project, user: User | None,
             raise ValueError(f"Revision R{reissue_rev} does not exist")
         rev.reissue_count += 1
         action = "revision.reissue"
+    elif new_rev is not None:
+        # Pinned number (baked into the documents). File under exactly it; on a
+        # concurrent collision, fail loudly so the caller regenerates rather than
+        # filing docs whose header says a different revision.
+        rev = Revision(project_id=project.id, rev_number=new_rev,
+                       created_by=(user.id if user else None))
+        db.add(rev)
+        try:
+            db.flush()  # trips uq_project_rev on collision
+        except IntegrityError:
+            db.rollback()
+            raise ValueError(
+                f"Revision R{new_rev} was just filed by another save — "
+                "please regenerate the report so its header matches.")
+        action = "revision.create"
     else:
         # SELECT-max then INSERT can race under concurrency; the unique
         # constraint backstops it — retry with a fresh number.

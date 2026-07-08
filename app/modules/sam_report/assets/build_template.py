@@ -114,9 +114,11 @@ hdr = re.sub(r"(PROJECT ID:.*?)<w:t>2</w:t>(.*?)<w:t>59-034</w:t>",
 hdr = rep(hdr, "<w:t>Franklin Solar, LLC</w:t>", "<w:t>«PROJECT_NAME»</w:t>", 1)
 hdr = rep(hdr, "<w:t>10/09/2025</w:t>", "<w:t>«REPORT_DATE»</w:t>", 1)
 hdr = hdr.replace("<w:t>REVISIO</w:t>", "<w:t>REVISION</w:t>", 1).replace("<w:t>N</w:t>", "<w:t></w:t>")
-# NOTE: the header REVISION area is a static 0|1|2|3 legend grid, not a single
-# value cell — leave it as-is (dynamically marking the current revision would need
-# cell-shading logic, not a token).
+# The header REVISION area was a static 0|1|2|3 legend grid; the four value cells
+# are merged into ONE gridSpan-4 cell holding «REVISION» so the header shows the
+# actual filed revision number (works for any revision, not just 0-3). Applied by
+# direct patch on the built template (the Franklin source is gone); mirror it here
+# if the template is ever rebuilt from source.
 
 # ── Jost-metric fit: shrink header font (fits fixed noWrap cells) ──
 for a_, b_ in [('16', '13'), ('20', '16'), ('18', '15'), ('28', '24')]:
