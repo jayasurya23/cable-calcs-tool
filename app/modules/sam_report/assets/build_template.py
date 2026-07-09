@@ -137,13 +137,24 @@ doc = doc.replace("<a:noAutofit/>", "<a:spAutoFit/>") \
 (U / "document.xml").write_text(doc, encoding="utf-8")
 (U / "header1.xml").write_text(hdr, encoding="utf-8")
 
-# ── Fonts -> Jost everywhere (attribute values only; ArialMT before Arial) ──
+# ── Fonts -> Jost everywhere (attribute values only; longer names before their
+#    prefixes: ArialMT before Arial, Calibri Light before Calibri). "Cambria Math"
+#    (the OMML equation font) is preserved because we match the QUOTED name. ──
 FONTS = [("ArialMT", "Jost"), ("Arial", "Jost"), ("Aptos Narrow", "Jost"),
          ("Aptos", "Jost"), ("Calibri Light", "Jost"), ("Calibri", "Jost"),
-         ("Times New Roman", "Jost")]
+         ("Times New Roman", "Jost"), ("Microsoft Sans Serif", "Jost"),
+         ("Segoe UI", "Jost"), ("Tahoma", "Jost"), ("Cambria", "Jost")]
 for xml in U.glob("*.xml"):
     t = xml.read_text(encoding="utf-8")
     for old, new in FONTS:
         t = t.replace(f'"{old}"', f'"{new}"')
     xml.write_text(t, encoding="utf-8")
-print("template tokenized + Jost + fit adjustments applied")
+# Theme fonts: point the major/minor Latin typefaces at Jost, so runs that
+# inherit the theme font (w:asciiTheme="minorHAnsi") also render in Jost instead
+# of Calibri — critical on Azure/LibreOffice, which has Jost but not Calibri.
+theme = U / "theme" / "theme1.xml"
+if theme.exists():
+    tt = theme.read_text(encoding="utf-8")
+    tt = re.sub(r'<a:latin typeface="[^"]*"', '<a:latin typeface="Jost"', tt)
+    theme.write_text(tt, encoding="utf-8")
+print("template tokenized + Jost (incl. theme) + fit adjustments applied")
