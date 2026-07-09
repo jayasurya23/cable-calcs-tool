@@ -160,6 +160,19 @@ properties:
     scale:
       minReplicas: ${MIN_REPLICAS}
       maxReplicas: ${MAX_REPLICAS}
+      rules:
+        - name: http-scale
+          http:
+            metadata:
+              concurrentRequests: "50"
+        - name: business-hours
+          custom:
+            type: cron
+            metadata:
+              timezone: "${WARM_TZ}"
+              start: "${WARM_START}"
+              end: "${WARM_END}"
+              desiredReplicas: "${WARM_REPLICAS}"
     volumes:
       - name: docs
         storageType: AzureFile

@@ -36,9 +36,11 @@ Server (Burstable B1ms) + database, a Storage account + file share, a Container
 Apps environment, attaches the share, and creates the Container App — then prints
 the live URL (`https://<app>.<hash>.<region>.azurecontainerapps.io`).
 
-**Approx. monthly cost:** Container Apps (scale-to-zero, light use) ≈ $0–5 ·
-PostgreSQL B1ms ≈ $12–15 · ACR Basic ≈ $5 · Storage/Log Analytics ≈ $1–2 →
-**~$17–22/mo** (vs ~$30–35 on a fixed App Service plan).
+**Approx. monthly cost:** Container Apps (1 replica warm on the work-hours cron
+schedule, scale-to-zero otherwise) ≈ $5–10 · PostgreSQL B1ms ≈ $12–15 · ACR Basic
+≈ $5 · Storage/Log Analytics ≈ $1–2 → **~$22–30/mo** (vs ~$30–35 on a fixed App
+Service plan). Set `WARM_REPLICAS=0` for pure scale-to-zero (~$17–22/mo, but a slow
+first load after idle).
 
 ## 3. First sign-in
 - `AUTH_MODE=local`: open the printed URL → `/setup` creates the admin account.
@@ -70,6 +72,12 @@ push to `main` → build + roll. Add repo secret `AZURE_CREDENTIALS`
 - **Persistence**: relational data lives in PostgreSQL; generated documents live
   on the mounted Azure Files share at `/data` (survives restarts, new revisions,
   and scale-to-zero). SQLite is only used for local dev.
+- **Warm-up / cold starts**: a cron scale rule keeps `WARM_REPLICAS` warm
+  `WARM_START`–`WARM_END` (default 7am–7pm Mon–Fri `WARM_TZ`), so there are no
+  cold starts during work hours. Outside the window it scales to `MIN_REPLICAS`
+  (0); an off-hours visit still works but cold-starts (~10–40s for the LibreOffice
+  image). An `http-scale` rule is kept alongside so requests always activate the
+  app. Adjust the schedule in `config.env` and re-run `provision.sh`.
 - **HTTPS**: Container Apps gives the app FQDN a free managed cert;
   `COOKIE_SECURE=true` is set so session cookies never travel over plain HTTP.
   Add a custom domain + managed cert with `az containerapp hostname` if desired.
