@@ -1,6 +1,7 @@
 """Routes for the SAM report module."""
 from __future__ import annotations
 
+import json
 from functools import partial
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from app.config import settings
 from app.core.db import get_db
 from app.core.deps import get_current_user
-from app.core.models import Project, Revision, User
+from app.core.models import Analysis, Project, Revision, User
 from app.core.templating import templates
 from app.modules.projects import storage
 from . import report_service, service
@@ -95,6 +96,7 @@ def upload_page(request: Request, project: int = 0,
 async def upload(
     request: Request,
     db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user),
     workbook: UploadFile = File(..., description="SAM runs Excel (.xlsx)"),
     pysam: UploadFile | None = File(None, description="Optional pysam JSON"),
     project_id: int = Form(0),
@@ -121,14 +123,15 @@ async def upload(
         )
     ctx = {"report": report, "upload_id": report.upload_id, "project_rec": proj_rec}
     if report.runs:
+        analysis = report_service.get_or_create_analysis(db, proj_rec, report.upload_id, user)
         prefill = report_service.prefill_project(report.upload_id)
         _apply_project_defaults(prefill, proj_rec)
         revisions = db.scalars(select(Revision)
-                               .where(Revision.project_id == proj_rec.id)
+                               .where(Revision.analysis_id == analysis.id)
                                .order_by(Revision.rev_number)).all()
-        next_rev = storage.next_rev_number(db, proj_rec)
-        prefill.revision = str(min(next_rev, 3))  # header REVISION grid default
-        ctx.update(project=prefill, modules=report_service.load_modules(report.upload_id),
+        next_rev = storage.next_rev_number(db, analysis)
+        ctx.update(project=prefill, analysis=analysis,
+                   modules=report_service.load_modules(report.upload_id),
                    stats=report_service.derived_stats(report.upload_id),
                    revisions=revisions, next_rev=next_rev)
     return templates.TemplateResponse(request, "sam_report/_report.html", ctx)
@@ -195,6 +198,56 @@ async def remove_module(request: Request, upload_id: str, index: int):
     )
 
 
+@router.get("/analysis/{analysis_id}", response_class=HTMLResponse)
+def open_analysis(request: Request, analysis_id: int,
+                  db: Session = Depends(get_db),
+                  user: User | None = Depends(get_current_user)):
+    """Reopen a saved analysis: re-render the report + form pre-filled from its
+    last saved state so it can be edited and re-run (files a NEW revision)."""
+    analysis = db.get(Analysis, analysis_id)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    proj_rec = db.get(Project, analysis.project_id)
+    upload_id = analysis.dir  # persistent working-dir token
+    if not upload_id or not (Path(settings.upload_dir) / upload_id).is_dir():
+        raise HTTPException(status_code=404, detail="Analysis working files are unavailable")
+    try:
+        report = service.rehydrate_report(upload_id)
+    except Exception:  # noqa: BLE001 - working dir present but meta/workbook missing or corrupt
+        raise HTTPException(status_code=404,
+                            detail="Analysis working files are missing or unreadable")
+    saved = json.loads(analysis.form_json or "{}")
+    if saved:
+        prefill = _project_from_form(saved)  # rebuild from the last-run form
+    else:
+        prefill = report_service.prefill_project(upload_id)
+        _apply_project_defaults(prefill, proj_rec)
+    revisions = db.scalars(select(Revision).where(Revision.analysis_id == analysis.id)
+                           .order_by(Revision.rev_number)).all()
+    next_rev = storage.next_rev_number(db, analysis)
+    return templates.TemplateResponse(request, "sam_report/analysis.html", {
+        "report": report, "upload_id": upload_id, "project_rec": proj_rec,
+        "project": prefill, "analysis": analysis,
+        "modules": report_service.load_modules(upload_id),
+        "stats": report_service.derived_stats(upload_id),
+        "revisions": revisions, "next_rev": next_rev,
+    })
+
+
+@router.post("/analysis/{analysis_id}/rename", response_class=HTMLResponse)
+def rename_analysis(analysis_id: int, name: str = Form(""),
+                    db: Session = Depends(get_db),
+                    user: User | None = Depends(get_current_user)):
+    analysis = db.get(Analysis, analysis_id)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if name.strip():
+        analysis.name = name.strip()
+        db.add(analysis)
+        db.commit()
+    return HTMLResponse('<span class="saved">✓ Saved</span>')
+
+
 @router.post("/report/{upload_id}/generate", response_class=HTMLResponse)
 async def generate_report(request: Request, upload_id: str,
                           db: Session = Depends(get_db),
@@ -206,14 +259,12 @@ async def generate_report(request: Request, upload_id: str,
     project = _project_from_form(form)
     labels = _labels_from_form(form)
 
-    # Resolve the project + the revision this will be filed as BEFORE generating,
-    # so the report header shows the actual number. It's baked into the docx here
-    # and pinned when filing (save_revision(new_rev=...)) so the header can never
-    # disagree with the revision folder it lands in.
+    # Resolve project + analysis (scenario) + the revision this will be filed as
+    # BEFORE generating, so the report header shows the actual number. It's baked
+    # into the docx here and pinned when filing (save_revision(new_rev=...)) so the
+    # header can never disagree with the revision folder it lands in.
     pid = report_service.get_upload_project_id(upload_id)
     proj_rec = db.get(Project, pid) if pid else None
-    save_as = str(form.get("save_as", "new"))
-    reissue = int(save_as) if save_as.isdigit() else None
     if proj_rec is None:
         # Never silently skip filing — the whole point is that documents are saved.
         return templates.TemplateResponse(
@@ -222,8 +273,12 @@ async def generate_report(request: Request, upload_id: str,
                         "could not be filed. Start the analysis from a project "
                         "page and try again."},
             status_code=500)
-    target_rev = reissue if reissue is not None else storage.next_rev_number(db, proj_rec)
+    analysis = report_service.get_or_create_analysis(db, proj_rec, upload_id, user)
+    save_as = str(form.get("save_as", "new"))
+    reissue = int(save_as) if save_as.isdigit() else None
+    target_rev = reissue if reissue is not None else storage.next_rev_number(db, analysis)
     project.revision = str(target_rev)
+    form_data = {k: str(v) for k, v in form.items() if not hasattr(v, "filename")}
 
     rev = None
     try:
@@ -237,26 +292,27 @@ async def generate_report(request: Request, upload_id: str,
             {"message": f"Report generation failed: {exc}"}, status_code=500,
         )
 
-    # ── Version control: file the document set under the project ──
-    if proj_rec is not None:
-        try:
-            rev = await run_in_threadpool(
-                partial(
-                    storage.save_revision, db, proj_rec, user,
-                    report_service.collect_revision_files(upload_id),
-                    {k: str(v) for k, v in form.items() if not hasattr(v, "filename")},
-                    reissue, str(form.get("rev_label", "")),
-                    new_rev=(None if reissue is not None else target_rev),
-                )
+    # ── Version control: file the document set under the analysis ──
+    try:
+        rev = await run_in_threadpool(
+            partial(
+                storage.save_revision, db, proj_rec, user,
+                report_service.collect_revision_files(upload_id), form_data,
+                reissue, str(form.get("rev_label", "")),
+                new_rev=(None if reissue is not None else target_rev),
+                analysis=analysis,
             )
-        except Exception as exc:  # noqa: BLE001 - surface but keep the preview usable
-            return templates.TemplateResponse(
-                request, "sam_report/_error.html",
-                {"message": f"Report generated but filing the revision failed: {exc}"},
-                status_code=500)
+        )
+    except Exception as exc:  # noqa: BLE001 - surface but keep the preview usable
+        return templates.TemplateResponse(
+            request, "sam_report/_error.html",
+            {"message": f"Report generated but filing the revision failed: {exc}"},
+            status_code=500)
+    # Persist the submitted form so reopening this analysis pre-fills the last run.
+    report_service.save_analysis_form(db, analysis, form_data)
     return templates.TemplateResponse(
         request, "sam_report/_report_preview.html",
-        {"upload_id": upload_id, "rev": rev, "project_rec": proj_rec},
+        {"upload_id": upload_id, "rev": rev, "project_rec": proj_rec, "analysis": analysis},
     )
 
 

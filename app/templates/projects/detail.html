@@ -14,36 +14,50 @@
 
 <div class="report-generate">
   <a class="btn btn-primary btn-lg" href="/sam?project={{ project.id }}">New SAM analysis</a>
-  <span class="hint">Analyze runs → generate the report → it's filed below as the next revision.</span>
+  <span class="hint">Each analysis is a saved scenario — reopen it to edit inputs and re-run; every run is kept as a revision.</span>
 </div>
 
-<h3>Revisions</h3>
-{% if revisions %}
-<div class="table-wrap">
-  <table class="data-table">
-    <thead>
-      <tr><th>Rev</th><th>Date</th><th>By</th><th>Label</th><th>Re-issues</th><th>Documents</th></tr>
-    </thead>
-    <tbody>
-      {% for r in revisions %}
-      <tr>
-        <td><b>R{{ r.rev_number }}</b></td>
-        <td>{{ r.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
-        <td>{{ r.creator.name if r.creator else "—" }}</td>
-        <td>{{ r.label }}</td>
-        <td>{{ r.reissue_count if r.reissue_count else "" }}</td>
-        <td>
-          {% for f in rev_files[r.id] %}
-          <a class="doc-link" href="/projects/{{ project.id }}/rev/{{ r.rev_number }}/{{ f | urlencode }}">{{ f }}</a>
+<h3>Analyses</h3>
+{% if analyses %}
+  {% for a in analyses %}
+  {% set revs = analysis_revs[a.id] %}
+  <div class="analysis-block" style="margin:0 0 22px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <h4 style="margin:0">{{ a.name or "SAM analysis" }}
+        {% if a.kind == "sam_collated" %}<span class="pill pill-muted">combined</span>{% endif %}
+        {% if revs %}<span class="dims">· latest R{{ revs[0].rev_number }}</span>{% endif %}
+      </h4>
+      <a class="btn btn-sm" href="/sam/analysis/{{ a.id }}">Edit &amp; re-run</a>
+    </div>
+    {% if revs %}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Rev</th><th>Date</th><th>By</th><th>Label</th><th>Re-issues</th><th>Documents</th></tr></thead>
+        <tbody>
+          {% for r in revs %}
+          <tr>
+            <td><b>R{{ r.rev_number }}</b></td>
+            <td>{{ r.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>{{ r.creator.name if r.creator else "—" }}</td>
+            <td>{{ r.label }}</td>
+            <td>{{ r.reissue_count if r.reissue_count else "" }}</td>
+            <td>
+              {% for f in rev_files[r.id] %}
+              <a class="doc-link" href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}/{{ f | urlencode }}">{{ f }}</a>
+              {% endfor %}
+            </td>
+          </tr>
           {% endfor %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="hint">Draft — no report filed yet. Open it to generate the first revision.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
 {% else %}
-<p class="hint">No revisions yet — run a SAM analysis and generate the report.</p>
+<p class="hint">No analyses yet — start one with “New SAM analysis”.</p>
 {% endif %}
 
 <h3 style="margin-top:28px">Project details <span class="dims">(prefill the report cover sheet)</span></h3>

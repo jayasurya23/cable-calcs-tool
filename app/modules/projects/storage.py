@@ -12,19 +12,21 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.models import AuditEvent, Project, Revision, User
+from app.core.models import Analysis, AuditEvent, Project, Revision, User
 
 # A filed revision must at minimum contain the issued report documents.
 REQUIRED_DOCS = {"SAM Report.docx", "SAM Report.pdf"}
 
 
-def revision_dir(project: Project, rev_number: int) -> Path:
-    return Path(settings.data_dir) / "projects" / str(project.id) / f"rev{rev_number}"
+def revision_dir(analysis: Analysis, rev_number: int) -> Path:
+    return (Path(settings.data_dir) / "projects" / str(analysis.project_id)
+            / "analyses" / str(analysis.id) / f"rev{rev_number}")
 
 
-def next_rev_number(db: Session, project: Project) -> int:
+def next_rev_number(db: Session, analysis: Analysis) -> int:
+    """Next revision number for THIS analysis — each scenario restarts at R0."""
     last = db.scalar(select(Revision.rev_number)
-                     .where(Revision.project_id == project.id)
+                     .where(Revision.analysis_id == analysis.id)
                      .order_by(Revision.rev_number.desc()).limit(1))
     return 0 if last is None else last + 1
 
@@ -32,8 +34,10 @@ def next_rev_number(db: Session, project: Project) -> int:
 def save_revision(db: Session, project: Project, user: User | None,
                   files: list[Path], form_data: dict,
                   reissue_rev: int | None = None, label: str = "",
-                  new_rev: int | None = None) -> Revision:
-    """File a document set as a new revision (default) or re-issue an existing one.
+                  new_rev: int | None = None,
+                  analysis: Analysis | None = None) -> Revision:
+    """File a document set as a new revision (default) or re-issue an existing one,
+    under the given `analysis` (scenario) — revision numbers restart per analysis.
 
     Files are staged into a temp directory and atomically swapped in, so a
     mid-copy failure can never destroy a previously issued document set.
@@ -43,13 +47,15 @@ def save_revision(db: Session, project: Project, user: User | None,
     exactly it — and if a concurrent save already took it, we raise rather than
     silently filing under a different number that would mismatch the documents.
     """
+    if analysis is None:
+        raise ValueError("save_revision requires an analysis")
     present = {Path(f).name for f in files if Path(f).is_file()}
     missing = REQUIRED_DOCS - present
     if missing:
         raise ValueError(f"Cannot file revision — missing document(s): {', '.join(sorted(missing))}")
 
     if reissue_rev is not None:
-        rev = db.scalar(select(Revision).where(Revision.project_id == project.id,
+        rev = db.scalar(select(Revision).where(Revision.analysis_id == analysis.id,
                                                Revision.rev_number == reissue_rev))
         if rev is None:
             raise ValueError(f"Revision R{reissue_rev} does not exist")
@@ -59,11 +65,11 @@ def save_revision(db: Session, project: Project, user: User | None,
         # Pinned number (baked into the documents). File under exactly it; on a
         # concurrent collision, fail loudly so the caller regenerates rather than
         # filing docs whose header says a different revision.
-        rev = Revision(project_id=project.id, rev_number=new_rev,
-                       created_by=(user.id if user else None))
+        rev = Revision(project_id=project.id, analysis_id=analysis.id,
+                       rev_number=new_rev, created_by=(user.id if user else None))
         db.add(rev)
         try:
-            db.flush()  # trips uq_project_rev on collision
+            db.flush()  # trips uq_analysis_rev on collision
         except IntegrityError:
             db.rollback()
             raise ValueError(
@@ -74,12 +80,12 @@ def save_revision(db: Session, project: Project, user: User | None,
         # SELECT-max then INSERT can race under concurrency; the unique
         # constraint backstops it — retry with a fresh number.
         for attempt in range(3):
-            rev = Revision(project_id=project.id,
-                           rev_number=next_rev_number(db, project),
+            rev = Revision(project_id=project.id, analysis_id=analysis.id,
+                           rev_number=next_rev_number(db, analysis),
                            created_by=(user.id if user else None))
             db.add(rev)
             try:
-                db.flush()  # assign rev.id; trips uq_project_rev on collision
+                db.flush()  # assign rev.id; trips uq_analysis_rev on collision
                 break
             except IntegrityError:
                 db.rollback()
@@ -87,7 +93,7 @@ def save_revision(db: Session, project: Project, user: User | None,
                     raise
         action = "revision.create"
 
-    dest = revision_dir(project, rev.rev_number)
+    dest = revision_dir(analysis, rev.rev_number)
 
     # Stage everything first; only then swap directories.
     staging = dest.with_name(f"{dest.name}.new{uuid.uuid4().hex[:6]}")

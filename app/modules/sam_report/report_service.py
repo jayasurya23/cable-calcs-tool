@@ -17,7 +17,9 @@ import uuid
 from pathlib import Path
 
 from fastapi import UploadFile
+from sqlalchemy.orm import Session
 
+from app.core.models import Analysis, Project, User
 from . import converter, docx_fill, parser, report_builder
 from .report_models import ReportModule, ReportProject
 from .service import UPLOAD_META_FILE, _upload_dir
@@ -52,6 +54,53 @@ def get_upload_project_id(upload_id: str) -> int | None:
     meta = _load_upload_meta(_upload_dir(upload_id))
     pid = meta.get("project_id")
     return int(pid) if pid else None
+
+
+def _update_upload_meta(upload_id: str, updates: dict) -> None:
+    dest = _upload_dir(upload_id)
+    meta = _load_upload_meta(dest)
+    meta.update(updates)
+    _atomic_write(dest / UPLOAD_META_FILE, json.dumps(meta).encode("utf-8"))
+
+
+# ─── analysis (saved scenario) lifecycle ─────────────────────────────────────
+
+def get_upload_analysis_id(upload_id: str) -> int | None:
+    aid = _load_upload_meta(_upload_dir(upload_id)).get("analysis_id")
+    return int(aid) if aid else None
+
+
+def create_analysis(db: Session, project: Project, upload_id: str,
+                    user: User | None, name: str = "") -> Analysis:
+    """Create a saved Analysis (scenario) referencing this upload's persistent
+    working dir; record its id in the upload meta so later steps resolve it."""
+    if not name:
+        wb = _load_upload_meta(_upload_dir(upload_id)).get("workbook") or ""
+        name = Path(wb).stem or "SAM analysis"
+    a = Analysis(project_id=project.id, name=name, dir=upload_id,
+                 created_by=(user.id if user else None))
+    db.add(a)
+    db.flush()          # assign a.id
+    _update_upload_meta(upload_id, {"analysis_id": a.id})
+    db.commit()
+    return a
+
+
+def get_or_create_analysis(db: Session, project: Project, upload_id: str,
+                           user: User | None) -> Analysis:
+    aid = get_upload_analysis_id(upload_id)
+    if aid:
+        a = db.get(Analysis, aid)
+        if a is not None:
+            return a
+    return create_analysis(db, project, upload_id, user)
+
+
+def save_analysis_form(db: Session, analysis: Analysis, form_data: dict) -> None:
+    """Persist the last-submitted form so reopening the analysis pre-fills it."""
+    analysis.form_json = json.dumps(form_data)
+    db.add(analysis)
+    db.commit()
 
 
 def collect_revision_files(upload_id: str) -> list[Path]:

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ analysis.name or "SAM analysis" }} · SAM Analysis{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>{{ analysis.name or "SAM analysis" }}
+    <span class="dims">· <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a></span>
+  </h1>
+  <p class="subtitle">
+    Reopened saved analysis. Edit the inputs below and press
+    <strong>Generate report</strong> to file the next revision (R{{ next_rev }}) —
+    prior revisions are kept.
+  </p>
+  <form class="rename-form" hx-post="/sam/analysis/{{ analysis.id }}/rename"
+        hx-target="#rename-status" hx-swap="innerHTML" style="display:flex;gap:8px;align-items:center">
+    <label style="margin:0">Scenario name
+      <input name="name" value="{{ analysis.name }}" style="min-width:260px">
+    </label>
+    <button class="btn btn-sm" type="submit">Rename</button>
+    <span id="rename-status" class="dims"></span>
+  </form>
+</section>
+
+<section id="report" class="report-slot">
+  {% include "sam_report/_report.html" %}
+</section>
+{% endblock %}

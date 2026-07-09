@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_user
-from app.core.models import AuditEvent, Project, Revision, User
+from app.core.models import Analysis, AuditEvent, Project, Revision, User
 from app.core.templating import templates
 from . import storage
 
@@ -51,12 +51,19 @@ def project_create(db: Session = Depends(get_db), user: User = Depends(require_u
 def project_detail(request: Request, project_id: int, db: Session = Depends(get_db),
                    user: User = Depends(require_user)):
     project = _get_project(db, project_id)
-    revisions = db.scalars(select(Revision).where(Revision.project_id == project.id)
-                           .order_by(Revision.rev_number.desc())).all()
-    rev_files = {r.id: json.loads(r.files_json or "[]") for r in revisions}
+    analyses = db.scalars(select(Analysis).where(Analysis.project_id == project.id)
+                          .order_by(Analysis.created_at.desc())).all()
+    analysis_revs: dict[int, list[Revision]] = {}
+    rev_files: dict[int, list[str]] = {}
+    for a in analyses:
+        revs = db.scalars(select(Revision).where(Revision.analysis_id == a.id)
+                          .order_by(Revision.rev_number.desc())).all()
+        analysis_revs[a.id] = revs
+        for r in revs:
+            rev_files[r.id] = json.loads(r.files_json or "[]")
     return templates.TemplateResponse(request, "projects/detail.html",
-                                      {"project": project, "revisions": revisions,
-                                       "rev_files": rev_files,
+                                      {"project": project, "analyses": analyses,
+                                       "analysis_revs": analysis_revs, "rev_files": rev_files,
                                        "saved": request.query_params.get("saved")})
 
 
@@ -79,14 +86,14 @@ async def project_update(request: Request, project_id: int,
     return RedirectResponse(f"/projects/{project.id}?saved=1", status_code=303)
 
 
-@router.get("/{project_id}/rev/{rev_number}/{filename}")
-def revision_download(project_id: int, rev_number: int, filename: str,
+@router.get("/{project_id}/analysis/{analysis_id}/rev/{rev_number}/{filename}")
+def revision_download(project_id: int, analysis_id: int, rev_number: int, filename: str,
                       db: Session = Depends(get_db),
                       user: User = Depends(require_user)):
     project = _get_project(db, project_id)
-    rev = db.scalar(select(Revision).where(Revision.project_id == project.id,
+    rev = db.scalar(select(Revision).where(Revision.analysis_id == analysis_id,
                                            Revision.rev_number == rev_number))
-    if rev is None:
+    if rev is None or rev.project_id != project.id:
         raise HTTPException(status_code=404, detail="Revision not found")
     path = storage.revision_file(project, rev, filename)
     if path is None:

@@ -69,15 +69,48 @@ class Project(Base):
     revisions: Mapped[list["Revision"]] = relationship(
         back_populates="project", order_by="Revision.rev_number",
         cascade="all, delete-orphan")
+    analyses: Mapped[list["Analysis"]] = relationship(
+        back_populates="project", order_by="Analysis.created_at",
+        cascade="all, delete-orphan")
 
 
-class Revision(Base):
-    """One issued document set (SAM report) for a project: R0, R1, …"""
-    __tablename__ = "revisions"
-    __table_args__ = (UniqueConstraint("project_id", "rev_number", name="uq_project_rev"),)
+class Analysis(Base):
+    """A saved, editable SAM analysis (scenario) under a project. A project can
+    hold several (e.g. different modules/configs); each has its own revision
+    history (R0, R1, …). kind='sam_collated' is the auto scenario that holds
+    combined reports built from several analyses."""
+    __tablename__ = "analyses"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")          # "Boviet 615W"
+    status: Mapped[str] = mapped_column(String(16), default="active")   # active | archived
+    kind: Mapped[str] = mapped_column(String(32), default="sam_report") # sam_report | sam_collated
+    dir: Mapped[str] = mapped_column(String(512), default="")           # working+storage root under data_dir
+    form_json: Mapped[str] = mapped_column(Text, default="{}")          # last-saved form snapshot (rehydration)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    project: Mapped[Project] = relationship(back_populates="analyses")
+    creator: Mapped[User | None] = relationship()
+    revisions: Mapped[list["Revision"]] = relationship(
+        back_populates="analysis", order_by="Revision.rev_number",
+        cascade="all, delete-orphan")
+
+
+class Revision(Base):
+    """One issued document set (SAM report) for an analysis: R0, R1, …"""
+    __tablename__ = "revisions"
+    # Rev numbers restart per analysis. (Legacy rows are backfilled to a default
+    # analysis by the startup migration; see app.core.db._migrate.)
+    __table_args__ = (UniqueConstraint("analysis_id", "rev_number", name="uq_analysis_rev"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    # Nullable so the column can be added to the live table before backfill.
+    analysis_id: Mapped[int | None] = mapped_column(
+        ForeignKey("analyses.id"), nullable=True, index=True)
     rev_number: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(32), default="sam_report")
     label: Mapped[str] = mapped_column(String(255), default="")
@@ -90,6 +123,7 @@ class Revision(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     project: Mapped[Project] = relationship(back_populates="revisions")
+    analysis: Mapped["Analysis | None"] = relationship(back_populates="revisions")
     creator: Mapped[User | None] = relationship()
 
 

@@ -100,6 +100,42 @@ def _build_table(runs: list[SamRun]) -> list[ReportTableRow]:
     return rows
 
 
+def rehydrate_report(upload_id: str) -> SamReport:
+    """Rebuild the SamReport from an already-staged upload dir (reopening a saved
+    analysis) — re-parses the persisted workbook/pysam; no re-staging or re-upload."""
+    dest_dir = _upload_dir(upload_id)
+    meta = json.loads((dest_dir / UPLOAD_META_FILE).read_text(encoding="utf-8"))
+    workbook_path = dest_dir / meta["workbook"]
+    warnings: list[str] = []
+    sheets = parser.preview_workbook(workbook_path)
+
+    equipment: Equipment | None = None
+    pysam_name = meta.get("pysam")
+    if pysam_name and (dest_dir / pysam_name).is_file():
+        try:
+            equipment = parser.extract_equipment(parser.parse_pysam_json(dest_dir / pysam_name))
+            overrides = _load_equipment_overrides(dest_dir)
+            if overrides.get("module_model"):
+                equipment.module_model = overrides["module_model"]
+            if overrides.get("inverter_model"):
+                equipment.inverter_model = overrides["inverter_model"]
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Could not parse pysam JSON: {exc}")
+
+    runs, parse_warnings = parser.extract_runs(workbook_path)
+    warnings.extend(parse_warnings)
+    table_rows = _build_table(runs) if runs else []
+    output_filename = f"{workbook_path.stem} - Output{workbook_path.suffix}"
+    if not (dest_dir / output_filename).is_file():
+        output_filename = None
+    return SamReport(
+        upload_id=upload_id, source_workbook=workbook_path.name, source_pysam=pysam_name,
+        engines_available=ENGINES_AVAILABLE, sheets=sheets, runs=runs, equipment=equipment,
+        table_columns=(TABLE_COLUMNS if runs else []), table_rows=table_rows,
+        output_filename=output_filename, warnings=warnings,
+    )
+
+
 def process_upload(workbook: UploadFile, pysam: UploadFile | None,
                    project_id: int | None = None) -> SamReport:
     """Stage the uploaded files, parse them, and build the report."""
