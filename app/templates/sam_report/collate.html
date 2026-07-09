@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Combine analyses · {{ project_rec.name }}{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>Combine analyses
+    <span class="dims">· <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a></span>
+  </h1>
+  <p class="subtitle">
+    Pick two or more scenarios to combine into one report — their Results tables
+    appear side-by-side. The <strong>primary</strong> scenario supplies the cover
+    sheet and inputs; it's filed under this project's “Combined report”.
+  </p>
+</section>
+
+{% if analyses | length >= 2 %}
+<form class="report-form"
+      hx-post="/sam/collate/{{ project_rec.id }}"
+      hx-target="#collate-preview" hx-swap="innerHTML" hx-indicator="#collate-spin">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Include</th><th>Primary</th><th>Analysis</th></tr></thead>
+      <tbody>
+        {% for a in analyses %}
+        <tr>
+          <td><input type="checkbox" name="analysis_ids" value="{{ a.id }}" {% if loop.index <= 2 %}checked{% endif %}></td>
+          <td><input type="radio" name="primary" value="{{ a.id }}" {% if loop.first %}checked{% endif %}></td>
+          <td>{{ a.name or "SAM analysis" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <label class="field-full">Revision label
+    <input name="rev_label" placeholder="e.g. Combined for IFC">
+  </label>
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Generate combined report</button>
+    <span id="collate-spin" class="htmx-indicator spinner">Generating…</span>
+  </div>
+</form>
+<div id="collate-preview" class="report-preview"></div>
+{% else %}
+<p class="hint">You need at least two analyses to combine.
+  <a href="/sam?project={{ project_rec.id }}">Add another analysis.</a></p>
+{% endif %}
+{% endblock %}

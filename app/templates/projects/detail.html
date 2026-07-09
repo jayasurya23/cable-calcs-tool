@@ -12,8 +12,12 @@
 
 {% if saved %}<div class="notice-ok">✓ Project saved</div>{% endif %}
 
+{% set sam_analyses = analyses | selectattr("kind", "equalto", "sam_report") | list %}
 <div class="report-generate">
   <a class="btn btn-primary btn-lg" href="/sam?project={{ project.id }}">New SAM analysis</a>
+  {% if sam_analyses | length >= 2 %}
+  <a class="btn btn-lg" href="/sam/collate/{{ project.id }}">Combine analyses…</a>
+  {% endif %}
   <span class="hint">Each analysis is a saved scenario — reopen it to edit inputs and re-run; every run is kept as a revision.</span>
 </div>
 
@@ -27,7 +31,11 @@
         {% if a.kind == "sam_collated" %}<span class="pill pill-muted">combined</span>{% endif %}
         {% if revs %}<span class="dims">· latest R{{ revs[0].rev_number }}</span>{% endif %}
       </h4>
+      {% if a.kind == "sam_collated" %}
+      <a class="btn btn-sm" href="/sam/collate/{{ project.id }}">Re-combine</a>
+      {% else %}
       <a class="btn btn-sm" href="/sam/analysis/{{ a.id }}">Edit &amp; re-run</a>
+      {% endif %}
     </div>
     {% if revs %}
     <div class="table-wrap">

@@ -248,6 +248,76 @@ def rename_analysis(analysis_id: int, name: str = Form(""),
     return HTMLResponse('<span class="saved">✓ Saved</span>')
 
 
+@router.get("/collate/{project_id}", response_class=HTMLResponse)
+def collate_page(request: Request, project_id: int, db: Session = Depends(get_db),
+                 user: User | None = Depends(get_current_user)):
+    """Picker: choose 2+ analyses to combine into one report."""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    analyses = db.scalars(select(Analysis).where(Analysis.project_id == project_id,
+                          Analysis.kind == "sam_report").order_by(Analysis.created_at)).all()
+    return templates.TemplateResponse(request, "sam_report/collate.html",
+                                      {"project_rec": project, "analyses": analyses})
+
+
+@router.post("/collate/{project_id}", response_class=HTMLResponse)
+async def collate_generate(request: Request, project_id: int,
+                           db: Session = Depends(get_db),
+                           user: User | None = Depends(get_current_user)):
+    """Build ONE combined report from the selected analyses and file it under the
+    project's 'Combined report' scenario (its own revision history)."""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    form = await request.form()
+    ids = [int(x) for x in form.getlist("analysis_ids") if str(x).isdigit()]
+    source = [db.get(Analysis, i) for i in ids]
+    source = [a for a in source if a and a.project_id == project.id and a.kind == "sam_report"]
+    if len(source) < 2:
+        return templates.TemplateResponse(
+            request, "sam_report/_error.html",
+            {"message": "Select at least two analyses to combine."}, status_code=400)
+    primary_id = form.get("primary")
+    primary = next((a for a in source if str(a.id) == str(primary_id)), source[0])
+
+    # Seed the combined report's project/cover/inputs from the primary analysis's
+    # last-run form; fall back to the project's cover-sheet defaults.
+    saved = json.loads(primary.form_json or "{}")
+    if saved:
+        project_fields = _project_from_form(saved)
+    else:
+        project_fields = ReportProject()
+        _apply_project_defaults(project_fields, project)
+
+    combined = report_service.get_or_create_collated_analysis(db, project, user)
+    target_rev = storage.next_rev_number(db, combined)
+    project_fields.revision = str(target_rev)
+    try:
+        await run_in_threadpool(report_service.render_collated, combined, source, project_fields)
+    except Exception as exc:  # noqa: BLE001
+        return templates.TemplateResponse(
+            request, "sam_report/_error.html",
+            {"message": f"Combined report generation failed: {exc}"}, status_code=500)
+
+    form_data = {**saved, "collated_from": ",".join(str(a.id) for a in source),
+                 "primary_analysis": str(primary.id),
+                 "combined_of": ", ".join(a.name for a in source)}
+    try:
+        rev = await run_in_threadpool(
+            partial(storage.save_revision, db, project, user,
+                    report_service.collect_revision_files(combined.dir), form_data,
+                    None, str(form.get("rev_label", "")),
+                    new_rev=target_rev, analysis=combined))
+    except Exception as exc:  # noqa: BLE001
+        return templates.TemplateResponse(
+            request, "sam_report/_error.html",
+            {"message": f"Combined report generated but filing failed: {exc}"}, status_code=500)
+    return templates.TemplateResponse(
+        request, "sam_report/_report_preview.html",
+        {"upload_id": combined.dir, "rev": rev, "project_rec": project, "analysis": combined})
+
+
 @router.post("/report/{upload_id}/generate", response_class=HTMLResponse)
 async def generate_report(request: Request, upload_id: str,
                           db: Session = Depends(get_db),

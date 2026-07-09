@@ -17,8 +17,10 @@ import uuid
 from pathlib import Path
 
 from fastapi import UploadFile
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.models import Analysis, Project, User
 from . import converter, docx_fill, parser, report_builder
 from .report_models import ReportModule, ReportProject
@@ -101,6 +103,55 @@ def save_analysis_form(db: Session, analysis: Analysis, form_data: dict) -> None
     analysis.form_json = json.dumps(form_data)
     db.add(analysis)
     db.commit()
+
+
+# ─── collate: one combined report from several analyses ──────────────────────
+
+COLLATED_NAME = "Combined report"
+
+
+def get_or_create_collated_analysis(db: Session, project: Project,
+                                    user: User | None) -> Analysis:
+    """The project's single 'Combined report' scenario (kind=sam_collated), which
+    holds the revision history of collated reports. Has its own working dir."""
+    a = db.scalar(select(Analysis).where(Analysis.project_id == project.id,
+                                         Analysis.kind == "sam_collated"))
+    if a is not None:
+        return a
+    token = uuid.uuid4().hex[:12]
+    (Path(settings.upload_dir) / token).mkdir(parents=True, exist_ok=True)
+    a = Analysis(project_id=project.id, name=COLLATED_NAME, kind="sam_collated",
+                 dir=token, created_by=(user.id if user else None))
+    db.add(a)
+    db.flush()
+    _update_upload_meta(token, {"project_id": project.id, "analysis_id": a.id})
+    db.commit()
+    return a
+
+
+def render_collated(combined: Analysis, source_analyses: list[Analysis],
+                    project: ReportProject) -> None:
+    """Build ONE report whose Results table unions the modules of every source
+    analysis (side-by-side), write docx + pdf into the combined analysis's dir."""
+    modules: list[ReportModule] = []
+    for a in source_analyses:
+        try:
+            modules.extend(_build_modules(a.dir, {}))
+        except Exception:  # noqa: BLE001 - skip an unreadable source, keep the rest
+            pass
+    if not modules:
+        raise ValueError("None of the selected analyses have readable module data.")
+
+    ctx = report_builder.build_context(project, modules)
+    dest_dir = _upload_dir(combined.dir)
+    docx_path = dest_dir / REPORT_DOCX_NAME
+    _atomic_write(docx_path, docx_fill.fill_docx(ctx))
+    tmp_pdf = dest_dir / f"{REPORT_PDF_NAME}.tmp{uuid.uuid4().hex[:6]}"
+    try:
+        converter.docx_to_pdf(docx_path, tmp_pdf)
+        os.replace(tmp_pdf, dest_dir / REPORT_PDF_NAME)
+    finally:
+        Path(tmp_pdf).unlink(missing_ok=True)
 
 
 def collect_revision_files(upload_id: str) -> list[Path]:
