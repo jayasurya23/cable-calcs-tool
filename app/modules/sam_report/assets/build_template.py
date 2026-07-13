@@ -113,6 +113,14 @@ if _li != -1:
     _se = doc.find("</w:p>", _e) + len("</w:p>")
     doc = doc[:_rb] + "</w:p>" + doc[_se:]
 
+# Cover on its own page: insert a page break before the TOC (the block right after
+# the cover sdt closes). A standalone break paragraph — NOT a TOC entry — so it
+# survives the TOC field regeneration that happens during PDF conversion.
+_toc = '</w:sdtContent></w:sdt><w:p w14:paraId="4AF749C0"'
+if doc.count(_toc) == 1:
+    doc = doc.replace(_toc, '</w:sdtContent></w:sdt><w:p><w:r><w:br w:type="page"/>'
+                            '</w:r></w:p><w:p w14:paraId="4AF749C0"', 1)
+
 a = doc.index("460 W Module")                           # Results table -> marker
 cover_end = doc.index("</w:tbl>") + len("</w:tbl>")
 doc = (doc[:doc.rfind("<w:tbl>", 0, a)]
