@@ -102,6 +102,17 @@ doc = doc[:_rp] + doc[_rp:_ri].replace(
     '<w:pStyle w:val="Heading1"/>',
     '<w:pStyle w:val="Heading1"/><w:pageBreakBefore/>', 1) + doc[_ri:]
 
+# Drop the leftover OLE LINK to an external Excel ("Book1") in the APPENDIX — it has
+# no valid source so Word/LibreOffice render it as "Error! Not a valid link.". Remove
+# the whole field (begin..end spans two paragraphs), leaving an empty appendix paragraph.
+_li = doc.find("LINK Excel.Sheet.12")
+if _li != -1:
+    _b = doc.rfind('<w:fldChar w:fldCharType="begin"/>', 0, _li)
+    _e = doc.find('<w:fldChar w:fldCharType="end"/>', _li)
+    _rb = max(doc.rfind("<w:r>", 0, _b), doc.rfind("<w:r ", 0, _b))
+    _se = doc.find("</w:p>", _e) + len("</w:p>")
+    doc = doc[:_rb] + "</w:p>" + doc[_se:]
+
 a = doc.index("460 W Module")                           # Results table -> marker
 cover_end = doc.index("</w:tbl>") + len("</w:tbl>")
 doc = (doc[:doc.rfind("<w:tbl>", 0, a)]
