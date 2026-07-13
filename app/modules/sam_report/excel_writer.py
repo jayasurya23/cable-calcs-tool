@@ -3,7 +3,7 @@ Writes the standardized "Output" sheet into a copy of the uploaded SAM workbook.
 
 Design replicated from the reference sample ("SAM excel output.xlsx"):
   * Table anchored at B4; columns: Year | Max SAM Isc (A) | Max SAM Voc (V) |
-    Max SAM Isc Rolling Average (A); one row per run-year; "Maximum" footer row.
+    3hr Rolling average; one row per run-year; "Maximum" footer row.
   * Header + footer rows: solid fill, theme color 3 @ 75% tint ("Text 2,
     Lighter 75%" — renders from the workbook's own theme, so it matches SAM's
     export exactly), thin borders.
@@ -27,7 +27,7 @@ TABLE_COLUMNS = [
     "Year",
     "Max SAM Isc (A)",
     "Max SAM Voc (V)",
-    "Max SAM Isc Rolling Average (A)",
+    "3hr Rolling average",
 ]
 
 _ANCHOR_ROW = 4      # header row (matches the sample)
