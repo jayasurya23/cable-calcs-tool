@@ -15,7 +15,11 @@ from pathlib import Path
 
 from .report_models import ReportContext
 
-TEMPLATE_PATH = Path(__file__).parent / "assets" / "report_template.docx"
+TEMPLATE_PATHS = {
+    "classic": Path(__file__).parent / "assets" / "report_template.docx",
+    "modern": Path(__file__).parent / "assets" / "report_template_modern.docx",
+}
+TEMPLATE_PATH = TEMPLATE_PATHS["classic"]  # back-compat alias
 
 # Results table column widths (dxa) per module: Year | 3-hr-avg Isc | Max Voc.
 _COL_YEAR, _COL_ISC, _COL_VOC = 706, 800, 1012
@@ -38,9 +42,28 @@ def _modules_phrase(n: int) -> str:
     return f"{_COUNT_WORDS.get(n, n)} different modules"
 
 
+def _revision_tokens(revision: str, date: str) -> dict[str, str]:
+    """Modern-template letterhead: the report date prints under the active
+    revision column of the 0-6 legend («REV_DATE_n»); «REV_LAST» keeps the last
+    legend cell "6" unless the revision exceeds the grid."""
+    try:
+        idx = int(str(revision).strip())
+    except ValueError:
+        idx = 0
+    col = idx if 0 <= idx <= 6 else 6
+    # Title-block convention: compact MM/DD/YYYY -> MM/DD/YY so the date fits the
+    # narrow revision column on one line (the cover keeps the full date).
+    m = re.fullmatch(r"(\d{1,2}/\d{1,2}/)\d{2}(\d{2})", date.strip())
+    grid_date = f"{m.group(1)}{m.group(2)}" if m else date.strip()
+    toks = {f"«REV_DATE_{i}»": (grid_date if i == col else "") for i in range(7)}
+    toks["«REV_LAST»"] = str(idx) if idx > 6 else "6"
+    return toks
+
+
 def _tokens(ctx: ReportContext) -> dict[str, str]:
     p = ctx.project
     return {
+        **_revision_tokens(p.revision, p.date),
         "«PROJECT_TITLE»": _esc(p.project_name.upper()),
         "«PROJECT_NAME»": _esc(p.project_name),
         "«PROJECT_ID»": _esc(p.project_id),
@@ -160,7 +183,7 @@ def _replace_marker(doc_xml: str, table_xml: str) -> str:
     return doc_xml[:p_start] + table_xml + doc_xml[p_end:]
 
 
-_TOKEN_RE = re.compile(r"«[A-Z_]+»")
+_TOKEN_RE = re.compile(r"«[A-Z0-9_]+»")  # digits: «REV_DATE_0»…«REV_DATE_6»
 
 
 def _apply_tokens(text: str, tokens: dict[str, str]) -> str:
@@ -169,12 +192,15 @@ def _apply_tokens(text: str, tokens: dict[str, str]) -> str:
     return _TOKEN_RE.sub(lambda m: tokens.get(m.group(0), m.group(0)), text)
 
 
-def fill_docx(ctx: ReportContext) -> bytes:
-    """Return the filled .docx bytes."""
+def fill_docx(ctx: ReportContext, template: str | None = None) -> bytes:
+    """Return the filled .docx bytes. `template` (or ctx.project.template)
+    selects the report style: "classic" (Franklin) or "modern" (AmpCalc)."""
+    name = template or getattr(ctx.project, "template", "classic")
+    path = TEMPLATE_PATHS.get(name) or TEMPLATE_PATHS["classic"]
     tokens = _tokens(ctx)
     table_xml = results_table_xml(ctx)
 
-    src = zipfile.ZipFile(TEMPLATE_PATH, "r")
+    src = zipfile.ZipFile(path, "r")
     out_buf = io.BytesIO()
     with zipfile.ZipFile(out_buf, "w", zipfile.ZIP_DEFLATED) as out:
         for item in src.infolist():

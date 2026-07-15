@@ -45,6 +45,8 @@ class ReportProject(BaseModel):
     project_id: str = ""
     date: str = ""                     # MM/DD/YYYY (defaults to today)
     revision: str = "0"
+    # Report style: "classic" (Franklin) or "modern" (AmpCalc cover/letterhead).
+    template: str = "classic"
 
     # Project Information table (pre-filled from pysam where possible)
     coordinates: str = ""

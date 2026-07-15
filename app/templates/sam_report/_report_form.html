@@ -10,6 +10,12 @@
     <label>Project name<input name="project_name" value="{{ project.project_name }}"></label>
     <label>Project ID<input name="project_id" value="{{ project.project_id }}" placeholder="e.g. 259-034"></label>
     <label>Date<input name="date" value="{{ project.date }}"></label>
+    <label>Template
+      <select name="template">
+        <option value="classic" {% if project.template != "modern" %}selected{% endif %}>Classic</option>
+        <option value="modern" {% if project.template == "modern" %}selected{% endif %}>Modern</option>
+      </select>
+    </label>
   </div>
   {# The header revision number is set automatically from "Save as" below. #}
 

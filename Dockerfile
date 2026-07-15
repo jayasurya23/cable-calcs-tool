@@ -9,7 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libreoffice-core \
       fontconfig \
       fonts-dejavu-core \
+      fonts-crosextra-carlito \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Carlito is metric-identical to Calibri: the modern report template's cover
+# geometry hangs off Calibri line metrics, and LibreOffice auto-substitutes
+# Carlito for Calibri, so Azure renders match Word exactly.
 
 WORKDIR /app
 
