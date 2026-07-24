@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — Cable Web{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>{{ title }}</h1>
+</section>
+<p class="subtitle">{{ message }}</p>
+{% if back_url %}
+<p style="margin-top:20px">
+  <a class="btn btn-secondary" href="{{ back_url }}">← Back to project</a>
+</p>
+{% endif %}
+{% endblock %}

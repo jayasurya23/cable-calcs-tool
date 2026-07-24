@@ -128,15 +128,19 @@ def analysis_delete(request: Request, project_id: int, analysis_id: int,
 
 
 @router.get("/{project_id}/analysis/{analysis_id}/rev/{rev_number}/{filename}")
-def revision_download(project_id: int, analysis_id: int, rev_number: int, filename: str,
-                      db: Session = Depends(get_db),
+def revision_download(request: Request, project_id: int, analysis_id: int,
+                      rev_number: int, filename: str, db: Session = Depends(get_db),
                       user: User = Depends(require_user)):
     project = _get_project(db, project_id)
     rev = db.scalar(select(Revision).where(Revision.analysis_id == analysis_id,
                                            Revision.rev_number == rev_number))
-    if rev is None or rev.project_id != project.id:
-        raise HTTPException(status_code=404, detail="Revision not found")
-    path = storage.revision_file(project, rev, filename)
+    path = storage.revision_file(project, rev, filename) if rev and rev.project_id == project.id else None
     if path is None:
-        raise HTTPException(status_code=404, detail="File not found")
+        return templates.TemplateResponse(request, "error_page.html", {
+            "title": "Document unavailable",
+            "message": "This document isn’t on the server anymore. It may have been filed "
+                       "before document storage was in place, or the file was removed. "
+                       "Other revisions of this analysis may still be downloadable.",
+            "back_url": f"/projects/{project_id}",
+        }, status_code=404)
     return FileResponse(path, filename=path.name)

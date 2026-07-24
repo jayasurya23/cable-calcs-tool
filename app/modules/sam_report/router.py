@@ -214,12 +214,27 @@ def open_analysis(request: Request, analysis_id: int,
     proj_rec = db.get(Project, analysis.project_id)
     upload_id = analysis.dir  # persistent working-dir token
     if not upload_id or not (Path(settings.upload_dir) / upload_id).is_dir():
-        raise HTTPException(status_code=404, detail="Analysis working files are unavailable")
+        # Old/migrated analyses can lose their staging dir — rebuild it from the
+        # latest filed revision (which stored the source workbook + pysam).
+        upload_id = report_service.recover_analysis_working_dir(db, analysis)
+        if not upload_id:
+            return templates.TemplateResponse(request, "error_page.html", {
+                "title": "This analysis can’t be re-opened",
+                "message": "Its editable working files aren’t on the server and couldn’t "
+                           "be rebuilt from a saved revision. You can still download its "
+                           "filed reports from the project page; to make changes, start a "
+                           "new analysis.",
+                "back_url": f"/projects/{analysis.project_id}",
+            }, status_code=404)
     try:
         report = service.rehydrate_report(upload_id)
     except Exception:  # noqa: BLE001 - working dir present but meta/workbook missing or corrupt
-        raise HTTPException(status_code=404,
-                            detail="Analysis working files are missing or unreadable")
+        return templates.TemplateResponse(request, "error_page.html", {
+            "title": "This analysis can’t be re-opened",
+            "message": "Its working files are present but could not be read. You can still "
+                       "download its filed reports from the project page.",
+            "back_url": f"/projects/{analysis.project_id}",
+        }, status_code=404)
     saved = json.loads(analysis.form_json or "{}")
     if saved:
         prefill = _project_from_form(saved)  # rebuild from the last-run form

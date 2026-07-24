@@ -98,6 +98,51 @@ def get_or_create_analysis(db: Session, project: Project, upload_id: str,
     return create_analysis(db, project, upload_id, user, name=name)
 
 
+def _pick_source_workbook(files: list[Path]) -> Path | None:
+    """The original SAM runs workbook among a filed revision's stored files: the
+    .xlsx/.xlsm that is not the generated '… - Output' derivative."""
+    xls = [p for p in files if p.suffix.lower() in (".xlsx", ".xlsm")
+           and not p.stem.endswith(" - Output")]
+    return xls[0] if xls else None
+
+
+def recover_analysis_working_dir(db: Session, analysis: Analysis) -> str | None:
+    """Rebuild a usable staging dir for an analysis whose working files are gone
+    (old/migrated records) from its most recent filed revision — which stored the
+    source workbook + pysam. Copies them into a fresh token dir, writes the upload
+    meta, points analysis.dir at it, and returns the token; None if nothing is
+    recoverable (no revision carrying a source workbook)."""
+    for rev in sorted(analysis.revisions, key=lambda r: r.rev_number, reverse=True):
+        if not rev.dir:
+            continue
+        rev_path = Path(settings.data_dir) / rev.dir
+        if not rev_path.is_dir():
+            continue
+        files = [p for p in rev_path.iterdir() if p.is_file()]
+        wb = _pick_source_workbook(files)
+        if wb is None:
+            continue
+        pysam = next((p for p in files
+                      if p.suffix.lower() == ".json" and p.name != "form.json"), None)
+        token = uuid.uuid4().hex[:12]
+        dest = Path(settings.upload_dir) / token
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(wb, dest / wb.name)
+        if pysam:
+            shutil.copy2(pysam, dest / pysam.name)
+        (dest / UPLOAD_META_FILE).write_text(json.dumps({
+            "workbook": wb.name,
+            "pysam": pysam.name if pysam else None,
+            "project_id": analysis.project_id,
+            "analysis_id": analysis.id,
+        }), encoding="utf-8")
+        analysis.dir = token
+        db.add(analysis)
+        db.commit()
+        return token
+    return None
+
+
 def save_analysis_form(db: Session, analysis: Analysis, form_data: dict) -> None:
     """Persist the last-submitted form so reopening the analysis pre-fills it."""
     analysis.form_json = json.dumps(form_data)
