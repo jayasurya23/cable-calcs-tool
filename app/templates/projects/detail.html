@@ -44,11 +44,18 @@
       <h4>{{ a.name or "Untitled analysis" }}
         {% if a.kind == "sam_collated" %}<span class="pill pill-muted">Combined</span>{% endif %}
       </h4>
-      {% if a.kind == "sam_collated" %}
-      <a class="btn btn-sm btn-secondary" href="/sam/collate/{{ project.id }}">Re-combine</a>
-      {% else %}
-      <a class="btn btn-sm btn-secondary" href="/sam/analysis/{{ a.id }}">Edit &amp; re-run</a>
-      {% endif %}
+      <div class="analysis-actions">
+        {% if a.kind == "sam_collated" %}
+        <a class="btn btn-sm btn-secondary" href="/sam/collate/{{ project.id }}">Re-combine</a>
+        {% else %}
+        <a class="btn btn-sm btn-secondary" href="/sam/analysis/{{ a.id }}">Edit &amp; re-run</a>
+        {% endif %}
+        <form method="post" action="/projects/{{ project.id }}/analysis/{{ a.id }}/delete"
+              onsubmit="return confirm('Delete this analysis and all its revisions? This cannot be undone.');"
+              style="display:inline">
+          <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+        </form>
+      </div>
     </div>
 
     {% if revs %}
@@ -141,5 +148,18 @@
       <button class="btn btn-primary btn-sm">Save project</button>
     </div>
   </form>
+
+  <div class="danger-zone">
+    <div>
+      <b>Delete this project</b>
+      <p class="settings-hint" style="margin:2px 0 0">Permanently removes the project and every
+        analysis, revision and generated document under it. This cannot be undone.</p>
+    </div>
+    <form method="post" action="/projects/{{ project.id }}/delete"
+          onsubmit="return confirm('Delete this project and ALL its analyses, revisions and documents? This cannot be undone.');"
+          style="display:inline">
+      <button class="btn btn-sm btn-danger" type="submit">Delete project</button>
+    </form>
+  </div>
 </details>
 {% endblock %}

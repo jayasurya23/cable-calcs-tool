@@ -426,6 +426,17 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 .support-files > summary { font-size: 12px; font-weight: 400; }
 .pill-current { background: rgba(220,20,60,.18); color: #ff9db0; margin-left: 6px; }
 
+/* ── Destructive actions ─────────────────────────────── */
+.analysis-actions { display: flex; align-items: center; gap: 8px; }
+.btn-danger { background: transparent; color: #ff9db0; border: 1px solid #5a2a2a; }
+.btn-danger:hover { background: rgba(220,20,60,.16); border-color: var(--crimson); color: #ffb3c1; }
+.danger-zone {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+  margin-top: 20px; padding: 12px 14px;
+  background: rgba(220,20,60,.05); border: 1px solid #5a2a2a; border-radius: 8px;
+}
+.danger-zone b { color: #ff9db0; }
+
 /* ── Collapsible project settings (cover-sheet defaults) ─ */
 .project-settings { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 14px; }
 .project-settings > summary { cursor: pointer; font-weight: 600; font-size: 16px; padding: 4px 0; }

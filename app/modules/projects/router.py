@@ -27,6 +27,15 @@ def _get_project(db: Session, project_id: int) -> Project:
     return project
 
 
+def _same_origin(request: Request) -> bool:
+    """Light CSRF guard for destructive POSTs: a browser Origin header (sent on
+    same-origin form posts) must match the request host."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return True  # non-browser clients / older agents
+    return origin.rstrip("/").endswith(f"//{request.url.netloc}")
+
+
 @router.get("", response_class=HTMLResponse)
 def project_list(request: Request, db: Session = Depends(get_db),
                  user: User = Depends(require_user)):
@@ -91,6 +100,31 @@ async def project_update(request: Request, project_id: int,
                       action="project.update", detail=project.name))
     db.commit()
     return RedirectResponse(f"/projects/{project.id}?saved=1", status_code=303)
+
+
+@router.post("/{project_id}/delete")
+def project_delete(request: Request, project_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(require_user)):
+    """Permanently delete a project and everything under it."""
+    project = _get_project(db, project_id)
+    if not _same_origin(request):
+        return RedirectResponse(f"/projects/{project_id}", status_code=303)
+    storage.delete_project(db, project, user)
+    return RedirectResponse("/projects", status_code=303)
+
+
+@router.post("/{project_id}/analysis/{analysis_id}/delete")
+def analysis_delete(request: Request, project_id: int, analysis_id: int,
+                    db: Session = Depends(get_db), user: User = Depends(require_user)):
+    """Permanently delete one analysis (and its revisions) under a project."""
+    project = _get_project(db, project_id)
+    analysis = db.get(Analysis, analysis_id)
+    if analysis is None or analysis.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if not _same_origin(request):
+        return RedirectResponse(f"/projects/{project_id}", status_code=303)
+    storage.delete_analysis(db, analysis, user)
+    return RedirectResponse(f"/projects/{project_id}", status_code=303)
 
 
 @router.get("/{project_id}/analysis/{analysis_id}/rev/{rev_number}/{filename}")

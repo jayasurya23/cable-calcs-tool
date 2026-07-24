@@ -133,6 +133,55 @@ def save_revision(db: Session, project: Project, user: User | None,
     return rev
 
 
+def _safe_rmtree(path: Path, must_be_under: Path) -> None:
+    """rm -rf a directory, but only if it resolves strictly inside
+    `must_be_under` — never the root itself or anything outside it (guards
+    against a blank/garbage token wiping an unexpected location)."""
+    try:
+        root = must_be_under.resolve()
+        target = path.resolve()
+    except OSError:
+        return
+    if target == root or root not in target.parents:
+        return
+    shutil.rmtree(target, ignore_errors=True)
+
+
+def delete_analysis(db: Session, analysis: Analysis, user: User | None) -> None:
+    """Delete one analysis (scenario): its DB rows (revisions cascade) plus its
+    filed revision directory and its upload working dir. The parent project and
+    its other analyses are untouched."""
+    pid = analysis.project_id
+    name = analysis.name or "analysis"
+    _safe_rmtree(Path(settings.data_dir) / "projects" / str(pid)
+                 / "analyses" / str(analysis.id), Path(settings.data_dir))
+    if analysis.dir:
+        _safe_rmtree(Path(settings.upload_dir) / analysis.dir, Path(settings.upload_dir))
+    db.delete(analysis)  # cascade removes its revisions
+    db.add(AuditEvent(user_id=(user.id if user else None), project_id=pid,
+                      action="analysis.delete", detail=name))
+    db.commit()
+
+
+def delete_project(db: Session, project: Project, user: User | None) -> None:
+    """Delete a project and everything under it — analyses, revisions, and all
+    generated documents on disk. Irreversible."""
+    pid = project.id
+    name = project.name
+    for a in list(project.analyses):        # each analysis's upload working dir
+        if a.dir:
+            _safe_rmtree(Path(settings.upload_dir) / a.dir, Path(settings.upload_dir))
+    _safe_rmtree(Path(settings.data_dir) / "projects" / str(pid), Path(settings.data_dir))
+    # Unlink audit history first so the project row can be deleted (audit_events
+    # has a FK to projects.id, enforced on Postgres — keep the log, drop the link).
+    db.query(AuditEvent).filter(AuditEvent.project_id == pid).update(
+        {AuditEvent.project_id: None}, synchronize_session=False)
+    db.delete(project)  # cascade removes analyses + revisions
+    db.add(AuditEvent(user_id=(user.id if user else None),
+                      action="project.delete", detail=name))
+    db.commit()
+
+
 def revision_file(project: Project, rev: Revision, filename: str) -> Path | None:
     """Resolve a stored file safely inside the revision directory
     (basename only — no traversal)."""
