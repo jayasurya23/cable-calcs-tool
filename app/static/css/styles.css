@@ -362,6 +362,76 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
   border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 13px;
 }
 
+/* ── Wayfinding: breadcrumb + stepper ────────────────── */
+.breadcrumb {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--muted); margin-bottom: 16px;
+}
+.breadcrumb a { color: var(--muted); }
+.breadcrumb a:hover { color: var(--text); text-decoration: underline; text-decoration-color: var(--crimson); }
+.breadcrumb .sep { color: var(--line); }
+.breadcrumb .crumb-current { color: var(--text); font-weight: 600; }
+
+.stepper { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 22px; }
+.step {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  font-size: 13px; color: var(--muted);
+}
+.step b {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--panel-2); color: var(--muted); font-size: 12px;
+}
+.step-active { border-color: var(--crimson); color: var(--text); }
+.step-active b { background: var(--crimson); color: #fff; }
+
+/* ── Mental-model explainer ──────────────────────────── */
+.model-explainer {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--crimson);
+  border-radius: 8px; padding: 10px 14px; margin: 6px 0 22px;
+  font-size: 13px; color: var(--muted);
+}
+.model-explainer b { color: var(--text); font-weight: 600; }
+.model-explainer .mx-ic { flex: 0 0 auto; }
+
+/* ── Analyses on the project hub ─────────────────────── */
+.analysis-block {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px 18px; margin: 0 0 16px;
+}
+.analysis-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.analysis-head h4 { margin: 0; font-size: 17px; }
+
+.deliverable {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px;
+  background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--crimson);
+  border-radius: 8px; padding: 12px 14px; margin: 12px 0 8px;
+}
+.deliverable .dl-meta { color: var(--muted); font-size: 13px; }
+.deliverable .dl-meta b { color: var(--text); }
+.deliverable-draft {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+  color: var(--muted); font-size: 14px;
+  background: var(--panel-2); border: 1px dashed var(--line); border-radius: 8px;
+  padding: 12px 14px; margin: 12px 0 8px;
+}
+.rev-history { margin-top: 4px; }
+.rev-history > summary,
+.support-files > summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.rev-history > summary { font-size: 13px; padding: 6px 0; }
+.rev-history > summary:hover { color: var(--text); }
+.support-files { margin: 2px 0; }
+.support-files > summary { font-size: 12px; font-weight: 400; }
+.pill-current { background: rgba(220,20,60,.18); color: #ff9db0; margin-left: 6px; }
+
+/* ── Collapsible project settings (cover-sheet defaults) ─ */
+.project-settings { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 14px; }
+.project-settings > summary { cursor: pointer; font-weight: 600; font-size: 16px; padding: 4px 0; }
+.project-settings > summary:hover { color: #fff; }
+.settings-hint { color: var(--muted); font-size: 13px; margin: 6px 0 14px; }
+
 /* ── Report preview ──────────────────────────────────── */
 .report-preview { margin-top: 20px; }
 .preview-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }

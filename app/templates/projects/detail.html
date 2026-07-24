@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} — Cable Web{% endblock %}
 
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a href="/projects">Projects</a><span class="sep">&rsaquo;</span>
+  <span class="crumb-current">{{ project.name }}</span>
+</nav>
+{% endblock %}
+
 {% block content %}
 <section class="page-head">
   <h1>{{ project.name }}
@@ -12,86 +19,127 @@
 
 {% if saved %}<div class="notice-ok">✓ Project saved</div>{% endif %}
 
+<div class="model-explainer">
+  <span class="mx-ic">💡</span>
+  <span>An <b>analysis</b> is a saved SAM setup you reopen and re-run. Each time you generate a report
+    it's filed as the next numbered <b>revision</b> (R0, R1, R2…) — the newest revision's PDF is your
+    current deliverable.</span>
+</div>
+
 {% set sam_analyses = analyses | selectattr("kind", "equalto", "sam_report") | list %}
 <div class="report-generate">
-  <a class="btn btn-primary btn-lg" href="/sam?project={{ project.id }}">New SAM analysis</a>
+  <a class="btn btn-primary btn-lg" href="/sam?project={{ project.id }}">+ New analysis</a>
   {% if sam_analyses | length >= 2 %}
-  <a class="btn btn-lg" href="/sam/collate/{{ project.id }}">Combine analyses…</a>
+  <a class="btn btn-lg btn-secondary" href="/sam/collate/{{ project.id }}">Combine analyses…</a>
   {% endif %}
-  <span class="hint">Each analysis is a saved scenario — reopen it to edit inputs and re-run; every run is kept as a revision.</span>
+  <span class="hint">Start a new SAM scenario, or combine existing analyses into one report.</span>
 </div>
 
 <h3>Analyses</h3>
 {% if analyses %}
   {% for a in analyses %}
   {% set revs = analysis_revs[a.id] %}
-  <div class="analysis-block" style="margin:0 0 22px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-      <h4 style="margin:0">{{ a.name or "SAM analysis" }}
-        {% if a.kind == "sam_collated" %}<span class="pill pill-muted">combined</span>{% endif %}
-        {% if revs %}<span class="dims">· latest R{{ revs[0].rev_number }}</span>{% endif %}
+  <div class="analysis-block">
+    <div class="analysis-head">
+      <h4>{{ a.name or "Untitled analysis" }}
+        {% if a.kind == "sam_collated" %}<span class="pill pill-muted">Combined</span>{% endif %}
       </h4>
       {% if a.kind == "sam_collated" %}
-      <a class="btn btn-sm" href="/sam/collate/{{ project.id }}">Re-combine</a>
+      <a class="btn btn-sm btn-secondary" href="/sam/collate/{{ project.id }}">Re-combine</a>
       {% else %}
-      <a class="btn btn-sm" href="/sam/analysis/{{ a.id }}">Edit &amp; re-run</a>
+      <a class="btn btn-sm btn-secondary" href="/sam/analysis/{{ a.id }}">Edit &amp; re-run</a>
       {% endif %}
     </div>
+
     {% if revs %}
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead><tr><th>Rev</th><th>Date</th><th>By</th><th>Label</th><th>Re-issues</th><th>Documents</th></tr></thead>
-        <tbody>
-          {% for r in revs %}
-          <tr>
-            <td><b>R{{ r.rev_number }}</b></td>
-            <td>{{ r.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>{{ r.creator.name if r.creator else "—" }}</td>
-            <td>{{ r.label }}</td>
-            <td>{{ r.reissue_count if r.reissue_count else "" }}</td>
-            <td>
-              {% for f in rev_files[r.id] %}
-              <a class="doc-link" href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}/{{ f | urlencode }}">{{ f }}</a>
-              {% endfor %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    {% set latest = revs[0] %}
+    {% set ld = rev_docs[latest.id] %}
+    <div class="deliverable">
+      {% if ld.pdf %}
+      <a class="btn btn-primary btn-sm"
+         href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ latest.rev_number }}/{{ ld.pdf | urlencode }}">⬇ Download report (PDF)</a>
+      {% endif %}
+      {% if ld.docx %}
+      <a class="doc-link"
+         href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ latest.rev_number }}/{{ ld.docx | urlencode }}">Word (.docx)</a>
+      {% endif %}
+      <span class="dl-meta">Current deliverable · <b>R{{ latest.rev_number }}</b>{% if latest.label %} · {{ latest.label }}{% endif %}
+        · filed {{ latest.updated_at.strftime("%Y-%m-%d") }}{% if latest.creator %} by {{ latest.creator.name }}{% endif %}</span>
     </div>
+
+    <details class="rev-history">
+      <summary>Revision history ({{ revs | length }})</summary>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Rev</th><th>Date</th><th>By</th><th>Label</th><th>Re-issues</th><th>Report &amp; files</th></tr></thead>
+          <tbody>
+            {% for r in revs %}
+            {% set d = rev_docs[r.id] %}
+            <tr>
+              <td><b>R{{ r.rev_number }}</b>{% if loop.first %}<span class="pill pill-current">current</span>{% endif %}</td>
+              <td>{{ r.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td>{{ r.creator.name if r.creator else "—" }}</td>
+              <td>{{ r.label }}</td>
+              <td>{{ r.reissue_count if r.reissue_count else "" }}</td>
+              <td>
+                {% if d.pdf %}
+                <a class="doc-link" href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}/{{ d.pdf | urlencode }}">{{ d.pdf }}</a>
+                {% endif %}
+                {% if d.others %}
+                <details class="support-files">
+                  <summary>Supporting files ({{ d.others | length }})</summary>
+                  {% for f in d.others %}
+                  <a class="doc-link" href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}/{{ f | urlencode }}">{{ f }}</a>
+                  {% endfor %}
+                </details>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
     {% else %}
-    <p class="hint">Draft — no report filed yet. Open it to generate the first revision.</p>
+    <div class="deliverable-draft">
+      <span>Draft — no report filed yet. Open this analysis to review inputs and generate <b>R0</b>.</span>
+      <a class="btn btn-sm" href="/sam/analysis/{{ a.id }}">Open analysis</a>
+    </div>
     {% endif %}
   </div>
   {% endfor %}
 {% else %}
-<p class="hint">No analyses yet — start one with “New SAM analysis”.</p>
+<p class="hint">No analyses yet. Click <strong>+ New analysis</strong> above to name a scenario, upload your
+  SAM runs, and generate the first report (R0).</p>
 {% endif %}
 
-<h3 style="margin-top:28px">Project details <span class="dims">(prefill the report cover sheet)</span></h3>
-<form method="post" action="/projects/{{ project.id }}" class="report-form">
-  <div class="form-grid">
-    <label>Project name<input name="name" value="{{ project.name }}" required></label>
-    <label>Project ID<input name="code" value="{{ project.code }}"></label>
-    <label>Status
-      <select name="status">
-        <option value="active" {% if project.status == "active" %}selected{% endif %}>active</option>
-        <option value="archived" {% if project.status == "archived" %}selected{% endif %}>archived</option>
-      </select>
-    </label>
-    <label>Owner<input name="owner_name" value="{{ project.owner_name }}"></label>
-    <label>Owner phone<input name="owner_phone" value="{{ project.owner_phone }}"></label>
-    <label>EPC<input name="epc_name" value="{{ project.epc_name }}"></label>
-    <label>EPC phone<input name="epc_phone" value="{{ project.epc_phone }}"></label>
-    <label>Engineering firm<input name="eng_firm_name" value="{{ project.eng_firm_name }}"></label>
-    <label>Engineering firm phone<input name="eng_firm_phone" value="{{ project.eng_firm_phone }}"></label>
-    <label>EOR<input name="eor" value="{{ project.eor }}" placeholder="Name, PE#"></label>
-    <label>Designer<input name="designer" value="{{ project.designer }}"></label>
-    <label>Check<input name="checker" value="{{ project.checker }}"></label>
-  </div>
-  <label class="field-full">Notes<textarea name="notes" rows="2">{{ project.notes }}</textarea></label>
-  <div class="actions" style="margin-top:14px">
-    <button class="btn btn-primary btn-sm">Save project</button>
-  </div>
-</form>
+<details class="project-settings">
+  <summary>Project details &amp; cover-sheet defaults</summary>
+  <p class="settings-hint">These prefill the cover sheet of every report you generate in this project — set them once.</p>
+  <form method="post" action="/projects/{{ project.id }}" class="report-form">
+    <div class="form-grid">
+      <label>Project name<input name="name" value="{{ project.name }}" required></label>
+      <label>Project ID<input name="code" value="{{ project.code }}"></label>
+      <label>Status
+        <select name="status">
+          <option value="active" {% if project.status == "active" %}selected{% endif %}>active</option>
+          <option value="archived" {% if project.status == "archived" %}selected{% endif %}>archived</option>
+        </select>
+      </label>
+      <label>Owner<input name="owner_name" value="{{ project.owner_name }}"></label>
+      <label>Owner phone<input name="owner_phone" value="{{ project.owner_phone }}"></label>
+      <label>EPC<input name="epc_name" value="{{ project.epc_name }}"></label>
+      <label>EPC phone<input name="epc_phone" value="{{ project.epc_phone }}"></label>
+      <label>Engineering firm<input name="eng_firm_name" value="{{ project.eng_firm_name }}"></label>
+      <label>Engineering firm phone<input name="eng_firm_phone" value="{{ project.eng_firm_phone }}"></label>
+      <label>EOR<input name="eor" value="{{ project.eor }}" placeholder="Name, PE#"></label>
+      <label>Designer<input name="designer" value="{{ project.designer }}"></label>
+      <label>Check<input name="checker" value="{{ project.checker }}"></label>
+    </div>
+    <label class="field-full">Notes<textarea name="notes" rows="2">{{ project.notes }}</textarea></label>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn btn-primary btn-sm">Save project</button>
+    </div>
+  </form>
+</details>
 {% endblock %}

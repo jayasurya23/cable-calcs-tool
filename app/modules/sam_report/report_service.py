@@ -89,13 +89,13 @@ def create_analysis(db: Session, project: Project, upload_id: str,
 
 
 def get_or_create_analysis(db: Session, project: Project, upload_id: str,
-                           user: User | None) -> Analysis:
+                           user: User | None, name: str = "") -> Analysis:
     aid = get_upload_analysis_id(upload_id)
     if aid:
         a = db.get(Analysis, aid)
         if a is not None:
             return a
-    return create_analysis(db, project, upload_id, user)
+    return create_analysis(db, project, upload_id, user, name=name)
 
 
 def save_analysis_form(db: Session, analysis: Analysis, form_data: dict) -> None:

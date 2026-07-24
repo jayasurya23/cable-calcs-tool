@@ -55,15 +55,22 @@ def project_detail(request: Request, project_id: int, db: Session = Depends(get_
                           .order_by(Analysis.created_at.desc())).all()
     analysis_revs: dict[int, list[Revision]] = {}
     rev_files: dict[int, list[str]] = {}
+    rev_docs: dict[int, dict] = {}   # per-revision: the PDF deliverable vs supporting files
     for a in analyses:
         revs = db.scalars(select(Revision).where(Revision.analysis_id == a.id)
                           .order_by(Revision.rev_number.desc())).all()
         analysis_revs[a.id] = revs
         for r in revs:
-            rev_files[r.id] = json.loads(r.files_json or "[]")
+            files = json.loads(r.files_json or "[]")
+            rev_files[r.id] = files
+            pdf = next((f for f in files if f.lower().endswith(".pdf")), None)
+            docx = next((f for f in files if f.lower().endswith(".docx")), None)
+            rev_docs[r.id] = {"pdf": pdf, "docx": docx,
+                              "others": [f for f in files if f != pdf]}
     return templates.TemplateResponse(request, "projects/detail.html",
                                       {"project": project, "analyses": analyses,
                                        "analysis_revs": analysis_revs, "rev_files": rev_files,
+                                       "rev_docs": rev_docs,
                                        "saved": request.query_params.get("saved")})
 
 

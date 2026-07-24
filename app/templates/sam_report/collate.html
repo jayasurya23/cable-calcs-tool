@@ -1,15 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Combine analyses · {{ project_rec.name }}{% endblock %}
 
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a href="/projects">Projects</a><span class="sep">&rsaquo;</span>
+  <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a><span class="sep">&rsaquo;</span>
+  <span class="crumb-current">Combine analyses</span>
+</nav>
+{% endblock %}
+
 {% block content %}
 <section class="page-head">
-  <h1>Combine analyses
-    <span class="dims">· <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a></span>
-  </h1>
+  <h1>Combine analyses</h1>
   <p class="subtitle">
-    Pick two or more scenarios to combine into one report — their Results tables
-    appear side-by-side. The <strong>primary</strong> scenario supplies the cover
-    sheet and inputs; it's filed under this project's “Combined report”.
+    Pick two or more analyses to combine into one report — their Results tables
+    appear side-by-side. The <strong>primary</strong> analysis supplies the cover
+    sheet and inputs. The result is filed as this project's <strong>Combined analysis</strong>.
   </p>
 </section>
 
@@ -25,7 +31,7 @@
         <tr>
           <td><input type="checkbox" name="analysis_ids" value="{{ a.id }}" {% if loop.index <= 2 %}checked{% endif %}></td>
           <td><input type="radio" name="primary" value="{{ a.id }}" {% if loop.first %}checked{% endif %}></td>
-          <td>{{ a.name or "SAM analysis" }}</td>
+          <td>{{ a.name or "Untitled analysis" }}</td>
         </tr>
         {% endfor %}
       </tbody>

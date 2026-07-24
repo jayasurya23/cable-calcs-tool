@@ -1,9 +1,8 @@
 {# Full preview: the actual generated PDF, embedded. Download serves the same file. #}
 {% if rev %}
-<div class="notice-ok">✓ Filed as <b>R{{ rev.rev_number }}</b>
-  {% if rev.reissue_count %}(re-issue #{{ rev.reissue_count }}){% endif %}
-  under <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a>
-  — all documents saved.</div>
+<div class="notice-ok">✓ <b>R{{ rev.rev_number }}</b>{% if rev.reissue_count %} (re-issue #{{ rev.reissue_count }}){% endif %}
+  is now the current issued report{% if analysis %} for <b>{{ analysis.name }}</b>{% endif %}
+  — all documents are saved under <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a>.</div>
 {% endif %}
 <div class="preview-head">
   <h3>Full preview</h3>
@@ -11,7 +10,8 @@
     <a class="btn btn-primary btn-sm"
        href="/sam/report/{{ upload_id }}/document.pdf?download=1" download>⬇ Download PDF</a>
     <a class="btn btn-secondary btn-sm"
-       href="/sam/report/{{ upload_id }}/document.docx" download>⬇ Download Word (.docx)</a>
+       href="/sam/report/{{ upload_id }}/document.docx" download>⬇ Word (.docx)</a>
+    <a class="btn btn-secondary btn-sm" href="/projects/{{ project_rec.id }}">← Back to project</a>
   </div>
 </div>
 <p class="hint">Generated from your Word template (Jost font). Review below, tweak the form and re-preview if needed — the editable .docx is downloadable too.</p>

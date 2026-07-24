@@ -102,6 +102,7 @@ async def upload(
     workbook: UploadFile = File(..., description="SAM runs Excel (.xlsx)"),
     pysam: UploadFile | None = File(None, description="Optional pysam JSON"),
     project_id: int = Form(0),
+    analysis_name: str = Form(""),
 ):
     """Handle the upload, then render the report fragment (HTMX swaps it in).
 
@@ -125,7 +126,8 @@ async def upload(
         )
     ctx = {"report": report, "upload_id": report.upload_id, "project_rec": proj_rec}
     if report.runs:
-        analysis = report_service.get_or_create_analysis(db, proj_rec, report.upload_id, user)
+        analysis = report_service.get_or_create_analysis(
+            db, proj_rec, report.upload_id, user, name=analysis_name.strip())
         prefill = report_service.prefill_project(report.upload_id)
         _apply_project_defaults(prefill, proj_rec)
         revisions = db.scalars(select(Revision)

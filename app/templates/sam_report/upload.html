@@ -1,18 +1,27 @@
 {% extends "base.html" %}
-{% block title %}SAM Analysis Reports{% endblock %}
+{% block title %}Start a new analysis · {{ project_rec.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a href="/projects">Projects</a><span class="sep">&rsaquo;</span>
+  <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a><span class="sep">&rsaquo;</span>
+  <span class="crumb-current">New analysis</span>
+</nav>
+{% endblock %}
 
 {% block content %}
 <section class="page-head">
-  <h1>SAM Analysis
-    <span class="dims">· <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a>
-    {% if project_rec.code %}({{ project_rec.code }}){% endif %}</span>
-  </h1>
+  <h1>Start a new analysis</h1>
   <p class="subtitle">
-    Upload the runs workbook exported from your SAM analysis. Optionally attach
-    the pysam JSON (SAM &rarr; Generate code &rarr; JSON for inputs) for extra
-    case detail. The generated report is filed under this project as a revision.
+    An analysis is one SAM setup — a saved set of inputs you can reopen and re-run.
+    Name it, upload your SAM runs workbook, and we'll build the report.
   </p>
 </section>
+
+<div class="stepper">
+  <span class="step step-active"><b>1</b> Name &amp; upload</span>
+  <span class="step"><b>2</b> Report details</span>
+</div>
 
 <form class="upload-form"
       hx-post="/sam/upload"
@@ -21,8 +30,16 @@
       hx-encoding="multipart/form-data"
       hx-indicator="#spinner">
   <input type="hidden" name="project_id" value="{{ project_rec.id }}">
+
   <div class="field">
-    <label for="workbook">Runs workbook <span class="req">*</span></label>
+    <label for="analysis_name">Analysis name <span class="req">*</span></label>
+    <input type="text" id="analysis_name" name="analysis_name"
+           placeholder="e.g. Boviet 615W bifacial" required />
+    <small>A name you'll recognize later — usually the module or configuration it represents.</small>
+  </div>
+
+  <div class="field">
+    <label for="workbook">SAM runs workbook <span class="req">*</span></label>
     <input type="file" id="workbook" name="workbook" accept=".xlsx,.xlsm" required />
     <small>Excel with all SAM runs (.xlsx / .xlsm).</small>
   </div>
@@ -30,16 +47,18 @@
   <div class="field">
     <label for="pysam">pysam JSON <span class="opt">(optional)</span></label>
     <input type="file" id="pysam" name="pysam" accept=".json" />
-    <small>SAM case-inputs JSON, if you have it.</small>
+    <small>SAM case-inputs JSON, if you have it — adds coordinates, GCR and modules-per-string.</small>
   </div>
 
   <div class="actions">
     <button type="submit" class="btn btn-primary">Analyze</button>
     <span id="spinner" class="htmx-indicator spinner">Analyzing…</span>
   </div>
+  <p class="hint" style="margin-top:14px">Next: we read your SAM runs, you review the report details
+    (pre-filled from this project), then <strong>Generate</strong> files it here as revision <strong>R0</strong>.</p>
 </form>
 
 <section id="report" class="report-slot">
-  <!-- HTMX swaps the report fragment in here after upload. -->
+  <!-- HTMX swaps the report fragment in here after upload (Step 2). -->
 </section>
 {% endblock %}

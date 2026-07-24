@@ -4,7 +4,8 @@
 {% block content %}
 <section class="page-head">
   <h1>Projects</h1>
-  <p class="subtitle">Each project holds its cover-sheet details and the full revision history of generated documents.</p>
+  <p class="subtitle">A project is one job. Inside it you create <strong>analyses</strong> (each a saved
+    SAM setup you re-run), and every report you generate is filed as a numbered <strong>revision</strong> — R0, R1, R2…</p>
 </section>
 
 <form method="post" action="/projects" class="new-project-form">
@@ -15,17 +16,19 @@
 
 <div class="cards" style="margin-top:20px">
   {% for p in projects %}
+  {% set n = p.analyses | length %}
   <a class="card" href="/projects/{{ p.id }}">
     <div class="card-head">
       <h2>{{ p.name }}</h2>
       {% if p.status == "active" %}<span class="pill pill-ok">active</span>
       {% else %}<span class="pill pill-muted">archived</span>{% endif %}
     </div>
-    <p>{% if p.code %}ID {{ p.code }} · {% endif %}{{ p.revisions | length }} revision{{ "s" if p.revisions | length != 1 }}
+    <p>{% if p.code %}ID {{ p.code }} · {% endif %}{{ n }} analys{{ "is" if n == 1 else "es" }}
        · created {{ p.created_at.strftime("%Y-%m-%d") }}{% if p.creator %} by {{ p.creator.name }}{% endif %}</p>
   </a>
   {% else %}
-  <p class="hint">No projects yet — create the first one above.</p>
+  <p class="hint">No projects yet. A project is one job — it stores your cover-sheet details and every
+    report you generate. Create your first one above to get started.</p>
   {% endfor %}
 </div>
 {% endblock %}
