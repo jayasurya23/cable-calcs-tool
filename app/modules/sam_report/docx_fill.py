@@ -19,7 +19,7 @@ TEMPLATE_PATHS = {
     "classic": Path(__file__).parent / "assets" / "report_template.docx",
     "modern": Path(__file__).parent / "assets" / "report_template_modern.docx",
 }
-TEMPLATE_PATH = TEMPLATE_PATHS["classic"]  # back-compat alias
+TEMPLATE_PATH = TEMPLATE_PATHS["modern"]  # default = the AmpCalc cover
 
 # Results table column widths (dxa) per module: Year | 3-hr-avg Isc | Max Voc.
 _COL_YEAR, _COL_ISC, _COL_VOC = 706, 800, 1012
@@ -195,8 +195,8 @@ def _apply_tokens(text: str, tokens: dict[str, str]) -> str:
 def fill_docx(ctx: ReportContext, template: str | None = None) -> bytes:
     """Return the filled .docx bytes. `template` (or ctx.project.template)
     selects the report style: "classic" (Franklin) or "modern" (AmpCalc)."""
-    name = template or getattr(ctx.project, "template", "classic")
-    path = TEMPLATE_PATHS.get(name) or TEMPLATE_PATHS["classic"]
+    name = template or getattr(ctx.project, "template", "modern")
+    path = TEMPLATE_PATHS.get(name) or TEMPLATE_PATHS["modern"]
     tokens = _tokens(ctx)
     table_xml = results_table_xml(ctx)
 

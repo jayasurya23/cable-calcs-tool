@@ -46,13 +46,13 @@ def _project_from_form(form) -> ReportProject:
     def g(name: str, default: str = "") -> str:
         return str(form.get(name, default) or default)
 
-    tpl = g("template", "classic")
     return ReportProject(
         project_name=g("project_name"),
         project_id=g("project_id"),
         date=g("date"),
         revision=g("revision", "0") or "0",
-        template=(tpl if tpl in ("classic", "modern") else "classic"),
+        template="modern",  # AmpCalc cover is now the only report style
+
         coordinates=g("coordinates"),
         gcr=g("gcr"),
         modules_per_string=g("modules_per_string"),
