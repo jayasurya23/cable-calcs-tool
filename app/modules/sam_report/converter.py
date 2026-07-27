@@ -38,10 +38,31 @@ def _find_soffice() -> str | None:
     return None
 
 
+# LibreOffice does NOT refresh a Word TOC (a "content index") on headless convert
+# by default, so the generated PDF shows the field's placeholder run instead of
+# real entries. Seeding this into the throwaway user profile flips on
+# "update indexes + fields on load", so --convert-to produces a populated TOC.
+_XCU_UPDATE_ON_LOAD = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<oor:items xmlns:oor="http://openoffice.org/2001/registry" '
+    'xmlns:xs="http://www.w3.org/2001/XMLSchema" '
+    'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+    '<item oor:path="/org.openoffice.Office.Writer/Content/Update/Index">'
+    '<prop oor:name="OnLoad" oor:op="fuse"><value>true</value></prop></item>'
+    '<item oor:path="/org.openoffice.Office.Writer/Content/Update/Field">'
+    '<prop oor:name="OnLoad" oor:op="fuse"><value>true</value></prop></item>'
+    '</oor:items>'
+)
+
+
 def _convert_soffice(soffice: str, docx_path: Path, out_pdf: Path) -> None:
     with tempfile.TemporaryDirectory() as outdir:
         # A dedicated user profile avoids clashes when several workers convert at once.
         profile = Path(outdir) / "profile"
+        user_dir = profile / "user"
+        user_dir.mkdir(parents=True, exist_ok=True)
+        (user_dir / "registrymodifications.xcu").write_text(
+            _XCU_UPDATE_ON_LOAD, encoding="utf-8")
         subprocess.run(
             [soffice, "--headless", "--norestore",
              f"-env:UserInstallation=file:///{profile.as_posix()}",

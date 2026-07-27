@@ -43,6 +43,14 @@ SRC = HERE / "NewCover.docm"
 CLASSIC = HERE / "report_template.docx"
 OUT = HERE / "report_template_modern.docx"
 
+# Blank header for the cover + TOC section, so the letterhead grid never lands
+# on the Table-of-Contents page.
+HEADER_EMPTY = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    '<w:p/></w:hdr>'
+)
+
 
 def rep(t: str, old: str, new: str, expect: int) -> str:
     if t.count(old) != expect:
@@ -220,18 +228,59 @@ EQ_IMAGE = zipfile.ZipFile(CLASSIC).read("word/media/image1.png")
 cut_from = doc.index('<w:p w14:paraId="5A83BCF7"')
 assert doc.count("<w:sdt>") == 1
 cut_to = doc.index("<w:sdt>")
-TOC_FIELD = (
-    '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>'
+# The TOC is a real Word field (Word refreshes it live on open), but LibreOffice —
+# the Azure converter — does NOT refresh a content index on headless convert, so
+# it renders the field's CACHED RESULT. We therefore bake the actual entries in as
+# that cached result (the SAM report's 7 sections are fixed, and its page geometry
+# is stable — Results is always ~1 page of a 26-row table). Page numbers here match
+# what Word computes; Word overwrites them anyway when a user opens the .docx.
+_TOC_RPR = '<w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/></w:rPr>'
+_TOC_PPR = ('<w:pPr><w:pStyle w:val="TOC1"/>'
+            '<w:tabs><w:tab w:val="left" w:pos="454"/>'
+            '<w:tab w:val="right" w:leader="dot" w:pos="11239"/></w:tabs>'
+            f'{_TOC_RPR}</w:pPr>')
+_TOC_ENTRIES = [
+    ("1", "DESCRIPTION / PURPOSE", "2"), ("2", "METHOD OF ANALYSIS", "2"),
+    ("3", "INPUTS", "2"), ("4", "PROJECT INFORMATION", "3"),
+    ("5", "RESULTS", "4"), ("6", "CONCLUSION", "4"), ("7", "APPENDIX", "5"),
+]
+
+
+def _toc_paragraph(num: str, title: str, page: str, first: bool, last: bool) -> str:
     # \u collects outline-level paragraphs (our headings use BodyHeadingSectionTitle
-    # + outlineLvl 0, not the built-in Heading styles \o alone would need)
-    '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-1" \\h \\z \\u </w:instrText></w:r>'
-    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-    '<w:r><w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/></w:rPr>'
-    '<w:t>Table of contents updates when the report is generated.</w:t></w:r>'
-    '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
-)
+    # + outlineLvl 0, so \o alone would miss them).
+    begin = ('<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>'
+             '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-1" \\h \\z \\u </w:instrText></w:r>'
+             '<w:r><w:fldChar w:fldCharType="separate"/></w:r>') if first else ""
+    end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>' if last else ""
+    body = (f'<w:r>{_TOC_RPR}<w:t>{num}</w:t></w:r><w:r>{_TOC_RPR}<w:tab/></w:r>'
+            f'<w:r>{_TOC_RPR}<w:t xml:space="preserve">{title}</w:t></w:r>'
+            f'<w:r>{_TOC_RPR}<w:tab/></w:r><w:r>{_TOC_RPR}<w:t>{page}</w:t></w:r>')
+    return f'<w:p>{_TOC_PPR}{begin}{body}{end}</w:p>'
+
+
+TOC_FIELD = "".join(
+    _toc_paragraph(n, t, p, first=(i == 0), last=(i == len(_TOC_ENTRIES) - 1))
+    for i, (n, t, p) in enumerate(_TOC_ENTRIES))
 PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
-doc = doc[:cut_from] + TOC_FIELD + PAGE_BREAK + sec + PAGE_BREAK + doc[cut_to:]
+# The cover + TOC form their own section whose default header is BLANK (rId950 ->
+# the new empty header part), so the letterhead grid never lands on the TOC page.
+# A section-break paragraph carrying that sectPr sits between the TOC and the body;
+# the body keeps the grid via the final (section-2) sectPr. Section 1 copies the
+# main section properties verbatim (keeps titlePg -> the cover stays header/footer
+# free on page 1) and only swaps its default header to the empty part.
+main_sect = re.search(r"<w:sectPr\b.*?</w:sectPr>", doc, re.DOTALL).group(0)
+assert 'r:id="rId950"' not in main_sect
+sect1 = main_sect.replace('r:id="rId15"', 'r:id="rId950"', 1)
+SECTION_BREAK = f'<w:p><w:pPr>{sect1}</w:pPr></w:p>'
+doc = doc[:cut_from] + TOC_FIELD + SECTION_BREAK + sec + PAGE_BREAK + doc[cut_to:]
+# Section 2 (body) drops titlePg so its very first page also shows the grid, and
+# drops pgNumType so it CONTINUES the page count from section 1 instead of
+# restarting at 0 (page numbering must stay continuous cover->appendix).
+last = doc.rfind("<w:sectPr")
+tail = (doc[last:].replace("<w:titlePg/>", "", 1)
+        .replace('<w:pgNumType w:start="0"/>', "", 1))
+doc = doc[:last] + tail
 
 # sample charts (rId12/rId13) lived only in the deleted region -> drop media+rels
 assert doc.count("rId12") == 0 and doc.count("rId13") == 0
@@ -239,10 +288,14 @@ rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
 for rid in ("rId12", "rId13"):
     rels = re.sub(rf'<Relationship Id="{rid}"[^>]*/>', "", rels, count=1)
 assert 'Id="rId901"' not in rels
+assert 'Id="rId950"' not in rels
 rels = rels.replace("</Relationships>",
                     '<Relationship Id="rId901" '
                     'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
-                    'Target="media/imageEq1.png"/></Relationships>')
+                    'Target="media/imageEq1.png"/>'
+                    '<Relationship Id="rId950" '
+                    'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" '
+                    'Target="headerEmpty.xml"/></Relationships>')
 DROP = {"word/media/image3.png", "word/media/image4.jpeg"}
 
 # ── 4. numbering: bring over the classic Inputs list definitions ──
@@ -291,9 +344,19 @@ hdr = hdr[:r_leg] + legend + hdr[r_date:]
 ctypes = rep(ctypes,
              "application/vnd.ms-word.document.macroEnabled.main+xml",
              "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml", 1)
+ctypes = ctypes.replace(
+    "</Types>",
+    '<Override PartName="/word/headerEmpty.xml" '
+    'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+    "</Types>")
 core = re.sub(r"<dc:title>[^<]*</dc:title>", "<dc:title>SAM Report</dc:title>", core)
 core = re.sub(r"<dc:subject>[^<]*</dc:subject>", "<dc:subject>SAM Report</dc:subject>", core)
 settings = re.sub(r"<w:documentProtection[^>]*/>", "", settings)
+# Make LibreOffice (the Azure converter) refresh the TOC field on load, so the
+# generated PDF shows real entries + page numbers instead of the placeholder run.
+if "<w:updateFields" not in settings:
+    si = settings.find(">", settings.find("<w:settings")) + 1
+    settings = settings[:si] + '<w:updateFields w:val="true"/>' + settings[si:]
 
 # ── 7. fonts + styles ──
 # FIDELITY POLICY: do NOT touch the .docm's Calibri references. The cover's
@@ -343,6 +406,8 @@ with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as out:
         else:
             out.writestr(item, z.read(item.filename))
     out.writestr("word/media/imageEq1.png", EQ_IMAGE)
+    ET.fromstring(HEADER_EMPTY)                    # well-formedness gate
+    out.writestr("word/headerEmpty.xml", HEADER_EMPTY.encode("utf-8"))
 OUT.write_bytes(buf.getvalue())
 
 final = zipfile.ZipFile(OUT)
