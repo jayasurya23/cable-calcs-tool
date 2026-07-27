@@ -109,9 +109,13 @@ render, not Word. See [`docs/SAM_REPORT.md`](docs/SAM_REPORT.md) §5.
 
 ## Documentation & tests
 
-- **[`docs/SAM_REPORT.md`](docs/SAM_REPORT.md)** — usage, required input formats
-  (SAM workbook + pysam JSON), the calculations, assumptions, limitations, and
-  how to run the tests.
+See **[`docs/`](docs/README.md)** for the full set:
+
+- **[`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)** — end-user guide (engineers).
+- **[`docs/HANDOFF.md`](docs/HANDOFF.md)** — operations & maintenance runbook
+  (Azure resources, deploy, users/secrets, backups, troubleshooting).
+- **[`docs/SAM_REPORT.md`](docs/SAM_REPORT.md)** — SAM module: input formats
+  (SAM workbook + pysam JSON), the calculations, assumptions, limitations, tests.
 - **`tests/`** (pytest) — the SAM calculations, parser robustness, and report
   fill, checked against hand-verified values:
   ```bash
