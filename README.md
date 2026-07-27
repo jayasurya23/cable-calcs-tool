@@ -97,20 +97,27 @@ uvicorn app.main:app --reload
    engine modules are deployed to a non-default path (or deploy them alongside).
 5. Health check path: `/health`.
 
-### Playwright / Chromium (report PDF)
+### DOCX → PDF (report rendering)
 
-The report PDF is rendered by headless Chromium via Playwright. On Azure Linux
-the browser + its system libraries must be installed at build/startup:
+The report PDF is produced by converting the filled Word template with
+**LibreOffice** (`soffice`, headless) on Azure, falling back to **Word COM** on a
+local Windows box that has Word but not LibreOffice (`converter.py`). The Docker
+image installs `libreoffice-writer` + the Jost/Carlito fonts; nothing else is
+needed at runtime. **Note:** LibreOffice renders the template differently from
+Word (and between LO versions) — verify template changes with a LibreOffice
+render, not Word. See [`docs/SAM_REPORT.md`](docs/SAM_REPORT.md) §5.
 
-```bash
-python -m playwright install --with-deps chromium
-```
+## Documentation & tests
 
-Add that to the build step (Oryx `PRE_BUILD_COMMAND`/`POST_BUILD_COMMAND`) or run
-it once in the startup script before `gunicorn`. Set
-`PLAYWRIGHT_BROWSERS_PATH=0` to bundle the browser inside the app if the default
-cache dir isn't writable. Locally, `python -m playwright install chromium` is
-enough (already done in `.venv`).
+- **[`docs/SAM_REPORT.md`](docs/SAM_REPORT.md)** — usage, required input formats
+  (SAM workbook + pysam JSON), the calculations, assumptions, limitations, and
+  how to run the tests.
+- **`tests/`** (pytest) — the SAM calculations, parser robustness, and report
+  fill, checked against hand-verified values:
+  ```bash
+  pip install -r requirements.txt -r requirements-dev.txt
+  python -m pytest
+  ```
 
 ## SAM report — current status
 
