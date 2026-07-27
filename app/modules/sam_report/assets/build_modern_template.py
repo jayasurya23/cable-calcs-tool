@@ -298,6 +298,17 @@ rels = rels.replace("</Relationships>",
                     'Target="headerEmpty.xml"/></Relationships>')
 DROP = {"word/media/image3.png", "word/media/image4.jpeg"}
 
+# The cover's PE-seal stamp is media/image2.png (a floating "[DATE] / Signature /
+# <seal>" image). Word + newer LibreOffice don't render it, but Azure's older
+# LibreOffice (25.2) does, so it stamped every PDF. Replacing the bytes with a
+# 1x1 transparent PNG makes it render as nothing everywhere — no XML surgery, so
+# the drawing anchor (referenced from both the DrawingML Choice and VML Fallback)
+# stays valid. Base64 of a 1x1 fully transparent PNG:
+import base64
+STAMP_IMAGE = "word/media/image2.png"
+TRANSPARENT_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+
 # ── 4. numbering: bring over the classic Inputs list definitions ──
 cnum = zipfile.ZipFile(CLASSIC).read("word/numbering.xml").decode("utf-8")
 m = re.search(r'<w:abstractNum w:abstractNumId="26".*?</w:abstractNum>', cnum, re.DOTALL)
@@ -403,6 +414,8 @@ with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as out:
         if data is not None:
             ET.fromstring(data)               # well-formedness gate
             out.writestr(item, data.encode("utf-8"))
+        elif item.filename == STAMP_IMAGE:
+            out.writestr(item, TRANSPARENT_PNG)   # blank out the PE-seal stamp
         else:
             out.writestr(item, z.read(item.filename))
     out.writestr("word/media/imageEq1.png", EQ_IMAGE)
