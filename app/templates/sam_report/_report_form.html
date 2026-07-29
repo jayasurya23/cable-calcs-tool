@@ -51,6 +51,11 @@
     {% include "sam_report/_report_form_modules.html" %}
   </div>
 
+  <h4>Datasheets <span class="dims">(optional PDFs — appended to the end of the report PDF)</span></h4>
+  <div id="datasheets-section">
+    {% include "sam_report/_report_form_datasheets.html" %}
+  </div>
+
   {% if next_rev is defined %}
   <h4>Version control</h4>
   <div class="form-grid">

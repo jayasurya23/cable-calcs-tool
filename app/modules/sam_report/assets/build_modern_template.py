@@ -283,7 +283,8 @@ doc = doc[:last] + tail
 # sample charts (rId12/rId13) lived only in the deleted region -> drop media+rels
 assert doc.count("rId12") == 0 and doc.count("rId13") == 0
 rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
-for rid in ("rId12", "rId13"):
+# rId9 = the cover PE-seal stamp image; its drawing is removed in §7b, so drop it too
+for rid in ("rId9", "rId12", "rId13"):
     rels = re.sub(rf'<Relationship Id="{rid}"[^>]*/>', "", rels, count=1)
 assert 'Id="rId901"' not in rels
 assert 'Id="rId950"' not in rels
@@ -294,18 +295,18 @@ rels = rels.replace("</Relationships>",
                     '<Relationship Id="rId950" '
                     'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" '
                     'Target="headerEmpty.xml"/></Relationships>')
-DROP = {"word/media/image3.png", "word/media/image4.jpeg"}
+DROP = {"word/media/image3.png", "word/media/image4.jpeg", "word/media/image2.png"}
 
-# The cover's PE-seal stamp is media/image2.png (a floating "[DATE] / Signature /
-# <seal>" image). Word + newer LibreOffice don't render it, but Azure's older
-# LibreOffice (25.2) does, so it stamped every PDF. Replacing the bytes with a
-# 1x1 transparent PNG makes it render as nothing everywhere — no XML surgery, so
-# the drawing anchor (referenced from both the DrawingML Choice and VML Fallback)
-# stays valid. Base64 of a 1x1 fully transparent PNG:
-import base64
-STAMP_IMAGE = "word/media/image2.png"
-TRANSPARENT_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+# The cover's PE-seal stamp is a floating DrawingML picture (docPr name
+# "Cover.Stamp", media/image2.png) marked hidden="1". Word honours hidden and
+# never shows it, but Azure's LibreOffice renders the hidden frame anyway and,
+# because the image is stretched to the ~3"x1.7" frame, paints it as a solid
+# BLACK box in the PDF. A transparent-PNG swap didn't help (LibreOffice fills a
+# scaled fully-transparent image with black), so we remove the drawing element
+# outright. It's a single plain <w:drawing> (no VML fallback, not inside an
+# mc:AlternateContent) whose only rId9/Cover.Stamp reference is here, so removing
+# it is safe; the host paragraph is a floating anchor host with no text, and the
+# stamp was behindDoc so dropping it doesn't reflow the cover.
 
 # ── 4. numbering: bring over the classic Inputs list definitions ──
 cnum = zipfile.ZipFile(CLASSIC).read("word/numbering.xml").decode("utf-8")
@@ -429,6 +430,27 @@ styles = rep(styles,
     '<w:pPr><w:spacing w:before="120" w:after="120"/><w:jc w:val="both"/></w:pPr>'
     '<w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style>', 1)
 
+# ── 7b. cover stamp removal + section page break ──
+# Remove the hidden PE-seal stamp drawing (renders as a black box in LibreOffice).
+_a = doc.find('r:embed="rId9"')
+assert _a != -1 and doc.count('r:embed="rId9"') == 1, "stamp image ref not unique"
+_ds = doc.rfind("<w:drawing>", 0, _a)
+_de = doc.find("</w:drawing>", _a) + len("</w:drawing>")
+assert _ds != -1 and _de != -1 and "Cover.Stamp" in doc[_ds:_de], "stamp drawing not found"
+doc = doc[:_ds] + doc[_de:]
+assert "Cover.Stamp" not in doc and 'r:embed="rId9"' not in doc, "stamp not fully removed"
+
+# Page break after the "Method of Analysis" section: force INPUTS onto a new page.
+_INPUTS_PID = 'w14:paraId="50D943D7"'
+assert doc.count(_INPUTS_PID) == 1, "INPUTS heading paraId not unique"
+_at = doc.find(_INPUTS_PID)
+_pstyle = '<w:pStyle w:val="BodyHeadingSectionTitle"/>'
+_ps = doc.find(_pstyle, _at)
+assert _ps != -1 and _ps < doc.find("</w:pPr>", _at), "INPUTS heading pStyle not found"
+_ins = _ps + len(_pstyle)
+assert "<w:pageBreakBefore/>" not in doc[_at:doc.find("</w:p>", _at)]
+doc = doc[:_ins] + "<w:pageBreakBefore/>" + doc[_ins:]
+
 # ── 8. write + validate ──
 edited = {
     "word/document.xml": doc,
@@ -450,8 +472,6 @@ with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as out:
         if data is not None:
             ET.fromstring(data)               # well-formedness gate
             out.writestr(item, data.encode("utf-8"))
-        elif item.filename == STAMP_IMAGE:
-            out.writestr(item, TRANSPARENT_PNG)   # blank out the PE-seal stamp
         else:
             out.writestr(item, z.read(item.filename))
     out.writestr("word/media/imageEq1.png", EQ_IMAGE)

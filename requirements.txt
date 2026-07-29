@@ -29,3 +29,6 @@ psycopg[binary]==3.3.4
 # stdlib zipfile — no extra package needed. DOCX->PDF is done by LibreOffice
 # (soffice) at runtime on the server (see startup.sh / converter.py), or by
 # Microsoft Word (COM) as a local-dev fallback.
+
+# Appending uploaded datasheet PDFs to the generated report PDF (converter.py).
+pypdf==6.14.2

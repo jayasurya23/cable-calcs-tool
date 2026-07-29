@@ -1,0 +1,29 @@
+{# Datasheets section — re-rendered on add/remove. Self-contained (list + add
+   control) so a single innerHTML swap of #datasheets-section stays consistent.
+   These PDFs are appended to the END of the generated report PDF. #}
+{% set datasheets = datasheets|default([]) %}
+{% if ds_error %}<div class="warning">⚠ {{ ds_error }}</div>{% endif %}
+
+<div class="module-rows">
+  {% for d in datasheets %}
+  <div class="module-row">
+    <span class="module-idx">{{ loop.index }}</span>
+    <span class="module-file" title="{{ d.name }}">{{ d.name }}</span>
+    {% if d.pages %}<span class="chip">{{ d.pages }} pp</span>{% endif %}
+    <button type="button" class="btn-remove" title="Remove datasheet"
+            hx-post="/sam/report/{{ upload_id }}/datasheet/remove/{{ loop.index0 }}"
+            hx-target="#datasheets-section" hx-swap="innerHTML">&times;</button>
+  </div>
+  {% else %}
+  <div class="dims" style="padding:2px 0 6px">No datasheets added yet.</div>
+  {% endfor %}
+</div>
+
+<div class="add-module">
+  <input type="file" id="new-datasheet-file" name="new_datasheet_file"
+         accept="application/pdf,.pdf">
+  <button type="button" class="btn btn-secondary btn-sm"
+          hx-post="/sam/report/{{ upload_id }}/datasheet"
+          hx-target="#datasheets-section" hx-swap="innerHTML"
+          hx-include="closest form" hx-encoding="multipart/form-data">+ Add datasheet</button>
+</div>

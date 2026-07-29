@@ -136,6 +136,7 @@ async def upload(
         next_rev = storage.next_rev_number(db, analysis)
         ctx.update(project=prefill, analysis=analysis,
                    modules=report_service.load_modules(report.upload_id),
+                   datasheets=report_service.load_datasheets(report.upload_id),
                    stats=report_service.derived_stats(report.upload_id),
                    revisions=revisions, next_rev=next_rev)
     return templates.TemplateResponse(request, "sam_report/_report.html", ctx)
@@ -202,6 +203,45 @@ async def remove_module(request: Request, upload_id: str, index: int):
     )
 
 
+@router.post("/report/{upload_id}/datasheet", response_class=HTMLResponse)
+async def add_datasheet(request: Request, upload_id: str):
+    """Add a datasheet PDF (appended to the report PDF) and re-render the section."""
+    _require_upload(upload_id)
+    form = await request.form()
+    error = None
+    upload = form.get("new_datasheet_file")
+    if upload is not None and getattr(upload, "filename", ""):
+        try:
+            report_service.add_datasheet(upload_id, upload)
+        except ValueError as exc:
+            error = str(exc)
+    else:
+        error = "Choose a PDF to add as a datasheet."
+    return templates.TemplateResponse(
+        request, "sam_report/_report_form_datasheets.html",
+        {
+            "upload_id": upload_id,
+            "datasheets": report_service.load_datasheets(upload_id),
+            "ds_error": error,
+        },
+    )
+
+
+@router.post("/report/{upload_id}/datasheet/remove/{index}", response_class=HTMLResponse)
+async def remove_datasheet(request: Request, upload_id: str, index: int):
+    """Remove a datasheet block and re-render the section."""
+    _require_upload(upload_id)
+    report_service.remove_datasheet(upload_id, index)
+    return templates.TemplateResponse(
+        request, "sam_report/_report_form_datasheets.html",
+        {
+            "upload_id": upload_id,
+            "datasheets": report_service.load_datasheets(upload_id),
+            "ds_error": None,
+        },
+    )
+
+
 @router.get("/analysis/{analysis_id}", response_class=HTMLResponse)
 def open_analysis(request: Request, analysis_id: int,
                   db: Session = Depends(get_db),
@@ -248,6 +288,7 @@ def open_analysis(request: Request, analysis_id: int,
         "report": report, "upload_id": upload_id, "project_rec": proj_rec,
         "project": prefill, "analysis": analysis,
         "modules": report_service.load_modules(upload_id),
+        "datasheets": report_service.load_datasheets(upload_id),
         "stats": report_service.derived_stats(upload_id),
         "revisions": revisions, "next_rev": next_rev,
     })

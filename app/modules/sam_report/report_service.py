@@ -27,6 +27,7 @@ from .report_models import ReportModule, ReportProject
 from .service import UPLOAD_META_FILE, _upload_dir
 
 MODULES_FILE = "modules.json"
+DATASHEETS_FILE = "datasheets.json"
 REPORT_PDF_NAME = "SAM Report.pdf"
 REPORT_DOCX_NAME = "SAM Report.docx"
 
@@ -316,6 +317,74 @@ def remove_module(upload_id: str, index: int) -> list[dict]:
     return entries
 
 
+# ─── datasheet management (PDFs appended to the report PDF) ───────────────────
+
+def _datasheets_meta_path(dest_dir: Path) -> Path:
+    return dest_dir / DATASHEETS_FILE
+
+
+def load_datasheets(upload_id: str) -> list[dict]:
+    """Return the datasheet list ([{'path','name','pages'}, ...]); [] if none."""
+    path = _datasheets_meta_path(_upload_dir(upload_id))
+    if path.is_file():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            pass
+    return []
+
+
+def _save_datasheets(dest_dir: Path, entries: list[dict]) -> None:
+    _atomic_write(_datasheets_meta_path(dest_dir), json.dumps(entries).encode("utf-8"))
+
+
+def add_datasheet(upload_id: str, upload: UploadFile) -> list[dict]:
+    """Stage a datasheet PDF (appended to the end of the report PDF at generate
+    time). Raises ValueError if the file isn't a readable, non-encrypted PDF."""
+    dest_dir = _upload_dir(upload_id)
+    entries = load_datasheets(upload_id)
+
+    safe = Path(upload.filename or "datasheet.pdf").name
+    if not safe.lower().endswith(".pdf"):
+        raise ValueError("Datasheets must be PDF files.")
+
+    ds_dir = dest_dir / "datasheets"
+    ds_dir.mkdir(exist_ok=True)
+    rel = f"datasheets/{uuid.uuid4().hex[:8]}_{safe}"
+    with open(dest_dir / rel, "wb") as out:
+        shutil.copyfileobj(upload.file, out)
+
+    pages = converter.validate_pdf(dest_dir / rel)
+    if pages is None:
+        (dest_dir / rel).unlink(missing_ok=True)
+        raise ValueError(
+            "That file couldn’t be read as a PDF (it may be corrupt or "
+            "password-protected). Remove any password and try again.")
+
+    entries.append({"path": rel, "name": safe, "pages": pages})
+    _save_datasheets(dest_dir, entries)
+    return entries
+
+
+def remove_datasheet(upload_id: str, index: int) -> list[dict]:
+    """Remove a datasheet block (index into the datasheet list)."""
+    dest_dir = _upload_dir(upload_id)
+    entries = load_datasheets(upload_id)
+    if 0 <= index < len(entries):
+        removed = entries.pop(index)
+        if removed.get("path", "").startswith("datasheets/"):
+            (dest_dir / removed["path"]).unlink(missing_ok=True)
+        _save_datasheets(dest_dir, entries)
+    return entries
+
+
+def datasheet_paths(upload_id: str) -> list[Path]:
+    """Existing datasheet files, in upload order (for appending to the PDF)."""
+    dest_dir = _upload_dir(upload_id)
+    return [dest_dir / e["path"] for e in load_datasheets(upload_id)
+            if (dest_dir / e["path"]).is_file()]
+
+
 # ─── prefill + build ─────────────────────────────────────────────────────────
 
 def prefill_project(upload_id: str) -> ReportProject:
@@ -389,13 +458,22 @@ def generate_report(upload_id: str, project: ReportProject,
     docx_path = dest_dir / REPORT_DOCX_NAME
     _atomic_write(docx_path, docx_bytes)
 
-    # 2. Convert to PDF (LibreOffice on Azure; Word COM locally). Write via a
-    #    temp file + atomic replace so a concurrent download never sees a partial.
+    # 2. Convert to PDF (LibreOffice on Azure; Word COM locally). Then append any
+    #    uploaded datasheet PDFs to the end. Write via a temp file + atomic replace
+    #    so a concurrent download never sees a partial. (The .docx deliverable is
+    #    the report only — PDFs can't be appended to a Word file.)
     tmp_pdf = dest_dir / f"{REPORT_PDF_NAME}.tmp{uuid.uuid4().hex[:6]}"
+    merged_pdf = dest_dir / f"{REPORT_PDF_NAME}.merged{uuid.uuid4().hex[:6]}"
     try:
         converter.docx_to_pdf(docx_path, tmp_pdf)
-        os.replace(tmp_pdf, dest_dir / REPORT_PDF_NAME)
+        extras = datasheet_paths(upload_id)
+        if extras:
+            converter.append_pdfs(tmp_pdf, extras, merged_pdf)
+            os.replace(merged_pdf, dest_dir / REPORT_PDF_NAME)
+        else:
+            os.replace(tmp_pdf, dest_dir / REPORT_PDF_NAME)
     finally:
         Path(tmp_pdf).unlink(missing_ok=True)
+        Path(merged_pdf).unlink(missing_ok=True)
 
     return REPORT_DOCX_NAME, REPORT_PDF_NAME

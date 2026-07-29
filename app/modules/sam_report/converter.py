@@ -97,6 +97,43 @@ def _convert_word(docx_path: Path, out_pdf: Path) -> None:
         raise RuntimeError("Word did not produce a PDF")
 
 
+def validate_pdf(path: str | Path) -> int | None:
+    """Return the page count if `path` is a readable PDF we can append, else None.
+
+    Rejects password-protected PDFs that don't open with an empty password (those
+    can't be merged into the report). Used to reject bad datasheet uploads early,
+    so append_pdfs at generate time only ever sees known-good files.
+    """
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
+    try:
+        reader = PdfReader(str(path))
+        if reader.is_encrypted:
+            try:
+                reader.decrypt("")
+            except Exception:  # noqa: BLE001 - needs a real password -> not usable
+                return None
+        return len(reader.pages)
+    except (PdfReadError, OSError, ValueError):
+        return None
+
+
+def append_pdfs(base_pdf: str | Path, extra_pdfs: list[Path], out_pdf: str | Path) -> Path:
+    """Write out_pdf = base_pdf followed by each extra PDF, in order."""
+    from pypdf import PdfReader, PdfWriter
+    writer = PdfWriter()
+    writer.append(str(base_pdf))
+    for p in extra_pdfs:
+        reader = PdfReader(str(p))
+        if reader.is_encrypted:
+            reader.decrypt("")
+        writer.append(reader)
+    with open(out_pdf, "wb") as fh:
+        writer.write(fh)
+    writer.close()
+    return Path(out_pdf)
+
+
 def docx_to_pdf(docx_path: str | Path, out_pdf: str | Path) -> Path:
     docx_path, out_pdf = Path(docx_path), Path(out_pdf)
     soffice = _find_soffice()
