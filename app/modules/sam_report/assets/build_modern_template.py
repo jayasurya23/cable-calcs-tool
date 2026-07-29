@@ -248,15 +248,19 @@ def _toc_paragraph(title: str, page: str, first: bool, last: bool) -> str:
     return f'<w:p>{_TOC_PPR}{begin}{body}{end}</w:p>'
 
 
-# Inline "Table of Contents" heading, placed immediately above the entries. The
-# .docm's heading is a floating textbox pinned to the top of the page (it overlaps
-# the letterhead grid); that copy is blanked in §7b, leaving its sibling red rule
-# in place, so the visible heading sits UNDER the rule and right on top of the list.
+# Inline red rule + "Table of Contents" heading, placed immediately above the
+# entries. The .docm's version is a floating group pinned to the top of the page
+# (rule + heading textbox), which left a big gap between the rule and the entries.
+# That whole group is removed in §7b; here the rule and heading are rebuilt inline
+# so the block reads tight and together: rule -> heading -> list.
+TOC_RULE = ('<w:p><w:pPr><w:spacing w:before="0" w:after="160" w:line="130" '
+            'w:lineRule="exact"/><w:shd w:val="clear" w:color="auto" '
+            'w:fill="991F2B"/></w:pPr></w:p>')
 TOC_HEADING = ('<w:p><w:pPr><w:pStyle w:val="TOCHeading"/>'
-               '<w:spacing w:before="240" w:after="120"/></w:pPr>'
+               '<w:spacing w:before="40" w:after="80"/></w:pPr>'
                '<w:r><w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/></w:rPr>'
                '<w:t>Table of Contents</w:t></w:r></w:p>')
-TOC_FIELD = TOC_HEADING + "".join(
+TOC_FIELD = TOC_RULE + TOC_HEADING + "".join(
     _toc_paragraph(t, p, first=(i == 0), last=(i == len(_TOC_ENTRIES) - 1))
     for i, (t, p) in enumerate(_TOC_ENTRIES))
 PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
@@ -460,21 +464,18 @@ for _band in ("Cover.Address", "Cover.Email"):
 # TOCHeading paragraph style; A29926 lives in TOCHeading + TOCHeadingChar.
 styles = rep(styles, '<w:color w:val="A29926"/>', '<w:color w:val="991F2B"/>', 2)
 
-# Blank the floating "Table of Contents" heading (docPr "TOC.Header"), whose text is
-# pinned to the top of the page overlapping the letterhead grid. Its sibling red
-# rule ("TOC.Rule") is left intact; the heading is re-added inline just above the
-# entries (TOC_HEADING), so it reads under the rule and next to the list. The
-# paragraph is byte-identical in the DrawingML Choice and the VML Fallback (2x).
-_TITLE = ('<w:p w14:paraId="765DAD54" w14:textId="20581A89" w:rsidR="00D27C93" '
-          'w:rsidRPr="007777AC" w:rsidRDefault="004A2D83" w:rsidP="000345E4">'
-          '<w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr>'
-          '<w:r w:rsidRPr="007777AC"><w:t xml:space="preserve">Table of </w:t></w:r>'
-          '<w:r w:rsidR="007777AC" w:rsidRPr="007777AC"><w:t>Content</w:t></w:r>'
-          '<w:r w:rsidR="007777AC"><w:t>s</w:t></w:r></w:p>')
-_TITLE_BLANK = ('<w:p w14:paraId="765DAD54" w14:textId="20581A89" w:rsidR="00D27C93" '
-                'w:rsidRPr="007777AC" w:rsidRDefault="004A2D83" w:rsidP="000345E4">'
-                '<w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr></w:p>')
-doc = rep(doc, _TITLE, _TITLE_BLANK, 2)
+# Remove the floating "Table of Contents" group (docPr "Group 203": the pinned
+# heading textbox "TOC.Header" + the red rule "TOC.Rule"). It sits at the top of
+# the page and left a large gap above the entries. The rule + heading are re-added
+# inline right above the entries (TOC_RULE / TOC_HEADING), so the whole block reads
+# together. The group is one <mc:AlternateContent> (DrawingML Choice + VML Fallback).
+while "TOC.Rule" in doc:
+    _tg = doc.find("TOC.Rule")
+    _tga = doc.rfind("<mc:AlternateContent", 0, _tg)
+    _tgb = doc.find("</mc:AlternateContent>", _tg) + len("</mc:AlternateContent>")
+    assert _tga != -1 and _tgb > _tga, "TOC group AlternateContent bounds not found"
+    doc = doc[:_tga] + doc[_tgb:]
+assert "TOC.Header" not in doc, "TOC.Header not fully removed"
 
 # ── 8. write + validate ──
 edited = {
