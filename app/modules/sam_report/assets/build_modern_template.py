@@ -203,21 +203,20 @@ assert 'BodyTextIndent3' not in sec
 # headings: Heading1 -> BodyHeadingSectionTitle + manual "N<tab>" + outlineLvl 0
 sec = sec.replace('<w:pStyle w:val="Heading1"/>', '<w:pStyle w:val="BodyHeadingSectionTitle"/>')
 count = [0]
-def _number_heading(m: re.Match) -> str:
+def _mark_heading(m: re.Match) -> str:
     p = m.group(0)
     if 'w:val="BodyHeadingSectionTitle"' not in p:
         return p
     count[0] += 1
-    num = f'<w:r><w:t>{count[0]}</w:t></w:r><w:r><w:tab/></w:r>'
-    # outlineLvl goes in pPr, before its rPr if present (schema order)
+    # outlineLvl goes in pPr, before its rPr if present (schema order) — kept so
+    # Word's live TOC still collects these headings. No section numbers (matches
+    # the engineer's TwoBlues reference).
     ppr_end = p.find("</w:pPr>")
     rpr_in_ppr = p.find("<w:rPr>", 0, ppr_end)
     ins = rpr_in_ppr if rpr_in_ppr != -1 else ppr_end
-    p = p[:ins] + '<w:outlineLvl w:val="0"/>' + p[ins:]
-    ppr_end = p.find("</w:pPr>") + len("</w:pPr>")
-    return p[:ppr_end] + num + p[ppr_end:]
-sec = PARA.sub(_number_heading, sec)
-assert count[0] == 7, f"expected 7 section headings, numbered {count[0]}"
+    return p[:ins] + '<w:outlineLvl w:val="0"/>' + p[ins:]
+sec = PARA.sub(_mark_heading, sec)
+assert count[0] == 7, f"expected 7 section headings, found {count[0]}"
 
 # the classic equation picture references rId8, which in the MODERN package is
 # the cover photo — remap to a fresh relationship + carry the image over
@@ -236,32 +235,31 @@ cut_to = doc.index("<w:sdt>")
 # what Word computes; Word overwrites them anyway when a user opens the .docx.
 _TOC_RPR = '<w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/></w:rPr>'
 _TOC_PPR = ('<w:pPr><w:pStyle w:val="TOC1"/>'
-            '<w:tabs><w:tab w:val="left" w:pos="454"/>'
-            '<w:tab w:val="right" w:leader="dot" w:pos="11239"/></w:tabs>'
+            '<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="11239"/></w:tabs>'
             f'{_TOC_RPR}</w:pPr>')
+# (title, page) — headings are unnumbered, so the TOC entries are too.
 _TOC_ENTRIES = [
-    ("1", "DESCRIPTION / PURPOSE", "2"), ("2", "METHOD OF ANALYSIS", "2"),
-    ("3", "INPUTS", "2"), ("4", "PROJECT INFORMATION", "3"),
-    ("5", "RESULTS", "4"), ("6", "CONCLUSION", "4"), ("7", "APPENDIX", "5"),
+    ("DESCRIPTION / PURPOSE", "2"), ("METHOD OF ANALYSIS", "2"),
+    ("INPUTS", "2"), ("PROJECT INFORMATION", "3"),
+    ("RESULTS", "4"), ("CONCLUSION", "4"), ("APPENDIX", "5"),
 ]
 
 
-def _toc_paragraph(num: str, title: str, page: str, first: bool, last: bool) -> str:
+def _toc_paragraph(title: str, page: str, first: bool, last: bool) -> str:
     # \u collects outline-level paragraphs (our headings use BodyHeadingSectionTitle
     # + outlineLvl 0, so \o alone would miss them).
     begin = ('<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>'
              '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-1" \\h \\z \\u </w:instrText></w:r>'
              '<w:r><w:fldChar w:fldCharType="separate"/></w:r>') if first else ""
     end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>' if last else ""
-    body = (f'<w:r>{_TOC_RPR}<w:t>{num}</w:t></w:r><w:r>{_TOC_RPR}<w:tab/></w:r>'
-            f'<w:r>{_TOC_RPR}<w:t xml:space="preserve">{title}</w:t></w:r>'
+    body = (f'<w:r>{_TOC_RPR}<w:t xml:space="preserve">{title}</w:t></w:r>'
             f'<w:r>{_TOC_RPR}<w:tab/></w:r><w:r>{_TOC_RPR}<w:t>{page}</w:t></w:r>')
     return f'<w:p>{_TOC_PPR}{begin}{body}{end}</w:p>'
 
 
 TOC_FIELD = "".join(
-    _toc_paragraph(n, t, p, first=(i == 0), last=(i == len(_TOC_ENTRIES) - 1))
-    for i, (n, t, p) in enumerate(_TOC_ENTRIES))
+    _toc_paragraph(t, p, first=(i == 0), last=(i == len(_TOC_ENTRIES) - 1))
+    for i, (t, p) in enumerate(_TOC_ENTRIES))
 PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
 # The cover + TOC form their own section whose default header is BLANK (rId950 ->
 # the new empty header part), so the letterhead grid never lands on the TOC page.
@@ -392,6 +390,44 @@ styles = styles.replace(
     '<w:unhideWhenUsed/><w:pPr><w:spacing w:after="100"/></w:pPr>'
     '<w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/><w:sz w:val="22"/></w:rPr>'
     "</w:style></w:styles>")
+
+# ── Formatting to match the engineer's reference (TwoBlues.docx) ──
+# Full paragraph-style-definition swaps (unique; the linked *Char styles are left
+# alone since our headings/body apply these as PARAGRAPH styles).
+#
+# Cover title + "SAM REPORT" (Title style) -> WHITE so they read on the red banner.
+styles = rep(styles,
+    '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/>'
+    '<w:next w:val="Normal"/><w:link w:val="TitleChar"/><w:autoRedefine/><w:uiPriority w:val="10"/>'
+    '<w:qFormat/><w:rsid w:val="000B74DE"/><w:pPr><w:spacing w:after="80"/><w:contextualSpacing/></w:pPr>'
+    '<w:rPr><w:rFonts w:ascii="Jost SemiBold" w:eastAsiaTheme="majorEastAsia" w:hAnsi="Jost SemiBold" '
+    'w:cstheme="majorBidi"/><w:b/><w:color w:val="000000" w:themeColor="text1"/><w:spacing w:val="20"/>'
+    '<w:kern w:val="28"/><w:sz w:val="48"/><w:szCs w:val="56"/><w14:ligatures w14:val="standardContextual"/></w:rPr></w:style>',
+    '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/>'
+    '<w:next w:val="Normal"/><w:link w:val="TitleChar"/><w:autoRedefine/><w:uiPriority w:val="10"/>'
+    '<w:qFormat/><w:rsid w:val="000B74DE"/><w:pPr><w:spacing w:after="80"/><w:contextualSpacing/></w:pPr>'
+    '<w:rPr><w:rFonts w:ascii="Jost SemiBold" w:eastAsiaTheme="majorEastAsia" w:hAnsi="Jost SemiBold" '
+    'w:cstheme="majorBidi"/><w:b/><w:color w:val="FFFFFF" w:themeColor="background1"/><w:spacing w:val="20"/>'
+    '<w:kern w:val="28"/><w:sz w:val="48"/><w:szCs w:val="56"/><w14:ligatures w14:val="standardContextual"/></w:rPr></w:style>', 1)
+# Section headings: 16pt, slate accent, space above, keep-with-next, no underline.
+styles = rep(styles,
+    '<w:style w:type="paragraph" w:customStyle="1" w:styleId="BodyHeadingSectionTitle"><w:name w:val="Body.Heading.Section.Title"/>'
+    '<w:basedOn w:val="Normal"/><w:link w:val="BodyHeadingSectionTitleChar"/><w:autoRedefine/><w:qFormat/>'
+    '<w:rsid w:val="006C49F6"/><w:rPr><w:rFonts w:ascii="Jost" w:eastAsia="Arial" w:hAnsi="Jost"/><w:caps/><w:noProof/><w:u w:val="single"/></w:rPr></w:style>',
+    '<w:style w:type="paragraph" w:customStyle="1" w:styleId="BodyHeadingSectionTitle"><w:name w:val="Body.Heading.Section.Title"/>'
+    '<w:basedOn w:val="Normal"/><w:link w:val="BodyHeadingSectionTitleChar"/><w:autoRedefine/><w:qFormat/>'
+    '<w:rsid w:val="006C49F6"/><w:pPr><w:keepNext/><w:spacing w:before="360" w:after="80"/></w:pPr>'
+    '<w:rPr><w:rFonts w:ascii="Jost" w:eastAsia="Arial" w:hAnsi="Jost"/><w:caps/><w:noProof/>'
+    '<w:color w:val="0F4761" w:themeColor="accent1"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style>', 1)
+# Body paragraphs: 11pt, justified, 6pt before/after, flush (drop the 0.5" indent).
+styles = rep(styles,
+    '<w:style w:type="paragraph" w:customStyle="1" w:styleId="BodyText"><w:name w:val="Body.Text"/><w:basedOn w:val="Normal"/>'
+    '<w:link w:val="BodyTextChar"/><w:autoRedefine/><w:qFormat/><w:rsid w:val="006C49F6"/>'
+    '<w:pPr><w:ind w:left="720"/></w:pPr><w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/></w:rPr></w:style>',
+    '<w:style w:type="paragraph" w:customStyle="1" w:styleId="BodyText"><w:name w:val="Body.Text"/><w:basedOn w:val="Normal"/>'
+    '<w:link w:val="BodyTextChar"/><w:autoRedefine/><w:qFormat/><w:rsid w:val="006C49F6"/>'
+    '<w:pPr><w:spacing w:before="120" w:after="120"/><w:jc w:val="both"/></w:pPr>'
+    '<w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style>', 1)
 
 # ── 8. write + validate ──
 edited = {
