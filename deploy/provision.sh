@@ -219,7 +219,14 @@ if [ -n "${ENTRA_CLIENT_ID:-}" ];    then ENVVARS+=( "ENTRA_CLIENT_ID=${ENTRA_CL
 if [ -n "${ENTRA_CLIENT_SECRET:-}" ]; then ENVVARS+=( "ENTRA_CLIENT_SECRET=secretref:entra-client-secret" ); fi
 # --revision-suffix forces a NEW revision every run, so the freshly built image tag
 # is actually re-pulled (an unchanged :latest string alone would be a no-op).
-az containerapp update -g "$RG" -n "$APP" \
+#
+# MSYS_NO_PATHCONV=1 is CRITICAL on Git Bash / MSYS (Windows): without it, Git Bash
+# rewrites the POSIX value "/data" in "DATA_DIR=/data" into a Windows path
+# ("C:/Program Files/Git/data"), so the app writes documents to ephemeral container
+# disk instead of the mounted Azure Files share — and every revision roll / scale-to-
+# zero then WIPES all filed reports. Harmless on Linux / Cloud Shell. The other args
+# here (image ref, URLs, secretrefs) aren't affected by path conversion either way.
+MSYS_NO_PATHCONV=1 az containerapp update -g "$RG" -n "$APP" \
   --image "${ACR_LOGIN}/${IMAGE}" \
   --cpu "$CPU" --memory "$MEMORY" \
   --min-replicas "$MIN_REPLICAS" --max-replicas "$MAX_REPLICAS" \

@@ -169,6 +169,7 @@ It is **built**, not hand-edited:
 | Old analysis won't reopen | It self-heals from the latest filed revision; if nothing is filed to rebuild from, a friendly page explains it. |
 | Deploy fails | `az login` / correct subscription; ACR build errors surface with `--no-logs` exit code — re-run without `--no-logs` locally to see the stream. |
 | DB errors after long idle | `pool_pre_ping`/recycle handle Azure's idle drop; if persistent, check the Flexible Server is running and firewall allows Azure services. |
+| **Documents disappear after a deploy or idle** | The container's `DATA_DIR` must be exactly **`/data`** (the Azure Files mount), not a Git-Bash-mangled path like `C:/Program Files/Git/data`. Check `az containerapp show -g cable-web-rg -n cable-web-castillo --query "properties.template.containers[0].env[?name=='DATA_DIR']"`. If wrong, run env-var updates from Git Bash with **`MSYS_NO_PATHCONV=1`** so `/data` isn't rewritten: `MSYS_NO_PATHCONV=1 az containerapp update -g cable-web-rg -n cable-web-castillo --set-env-vars "DATA_DIR=/data" "UPLOAD_DIR=/data/uploads" --revision-suffix "rfix$(date +%Y%m%d%H%M%S)"`. provision.sh already guards this. Files written to a wrong path went to ephemeral disk and are lost on the next roll/scale-to-zero. |
 
 ## 11. Security & cost
 
