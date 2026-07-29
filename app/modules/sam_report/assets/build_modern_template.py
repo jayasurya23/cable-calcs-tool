@@ -43,15 +43,6 @@ SRC = HERE / "NewCover.docm"
 CLASSIC = HERE / "report_template.docx"
 OUT = HERE / "report_template_modern.docx"
 
-# Blank header for the cover + TOC section, so the letterhead grid never lands
-# on the Table-of-Contents page.
-HEADER_EMPTY = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-    '<w:p/></w:hdr>'
-)
-
-
 def rep(t: str, old: str, new: str, expect: int) -> str:
     if t.count(old) != expect:
         raise SystemExit(f"expected {expect}x {old!r}, found {t.count(old)}")
@@ -261,15 +252,15 @@ TOC_FIELD = "".join(
     _toc_paragraph(t, p, first=(i == 0), last=(i == len(_TOC_ENTRIES) - 1))
     for i, (t, p) in enumerate(_TOC_ENTRIES))
 PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
-# The cover + TOC form their own section whose default header is BLANK (rId950 ->
-# the new empty header part), so the letterhead grid never lands on the TOC page.
-# A section-break paragraph carrying that sectPr sits between the TOC and the body;
-# the body keeps the grid via the final (section-2) sectPr. Section 1 copies the
-# main section properties verbatim (keeps titlePg -> the cover stays header/footer
-# free on page 1) and only swaps its default header to the empty part.
+# The cover + TOC form their own section that copies the main section properties
+# verbatim: it keeps the letterhead grid header (rId15) AND titlePg, so page 1 (the
+# cover) stays header/footer free while page 2 (the TOC) shows the same letterhead
+# grid as the body — matching the engineer's reference (TwoBlues.docx), where the
+# TOC page carries the full letterhead. A section-break paragraph carrying that
+# sectPr sits between the TOC and the body; the body keeps the grid via the final
+# (section-2) sectPr.
 main_sect = re.search(r"<w:sectPr\b.*?</w:sectPr>", doc, re.DOTALL).group(0)
-assert 'r:id="rId950"' not in main_sect
-sect1 = main_sect.replace('r:id="rId15"', 'r:id="rId950"', 1)
+sect1 = main_sect
 SECTION_BREAK = f'<w:p><w:pPr>{sect1}</w:pPr></w:p>'
 doc = doc[:cut_from] + TOC_FIELD + SECTION_BREAK + sec + PAGE_BREAK + doc[cut_to:]
 # Section 2 (body) drops titlePg so its very first page also shows the grid, and
@@ -287,14 +278,10 @@ rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
 for rid in ("rId9", "rId12", "rId13"):
     rels = re.sub(rf'<Relationship Id="{rid}"[^>]*/>', "", rels, count=1)
 assert 'Id="rId901"' not in rels
-assert 'Id="rId950"' not in rels
 rels = rels.replace("</Relationships>",
                     '<Relationship Id="rId901" '
                     'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
-                    'Target="media/imageEq1.png"/>'
-                    '<Relationship Id="rId950" '
-                    'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" '
-                    'Target="headerEmpty.xml"/></Relationships>')
+                    'Target="media/imageEq1.png"/></Relationships>')
 DROP = {"word/media/image3.png", "word/media/image4.jpeg", "word/media/image2.png"}
 
 # The cover's PE-seal stamp is a floating DrawingML picture (docPr name
@@ -354,11 +341,6 @@ hdr = hdr[:r_leg] + legend + hdr[r_date:]
 ctypes = rep(ctypes,
              "application/vnd.ms-word.document.macroEnabled.main+xml",
              "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml", 1)
-ctypes = ctypes.replace(
-    "</Types>",
-    '<Override PartName="/word/headerEmpty.xml" '
-    'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
-    "</Types>")
 core = re.sub(r"<dc:title>[^<]*</dc:title>", "<dc:title>SAM Report</dc:title>", core)
 core = re.sub(r"<dc:subject>[^<]*</dc:subject>", "<dc:subject>SAM Report</dc:subject>", core)
 settings = re.sub(r"<w:documentProtection[^>]*/>", "", settings)
@@ -475,8 +457,6 @@ with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as out:
         else:
             out.writestr(item, z.read(item.filename))
     out.writestr("word/media/imageEq1.png", EQ_IMAGE)
-    ET.fromstring(HEADER_EMPTY)                    # well-formedness gate
-    out.writestr("word/headerEmpty.xml", HEADER_EMPTY.encode("utf-8"))
 OUT.write_bytes(buf.getvalue())
 
 final = zipfile.ZipFile(OUT)
