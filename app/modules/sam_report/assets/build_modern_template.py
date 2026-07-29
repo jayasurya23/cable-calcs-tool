@@ -248,7 +248,15 @@ def _toc_paragraph(title: str, page: str, first: bool, last: bool) -> str:
     return f'<w:p>{_TOC_PPR}{begin}{body}{end}</w:p>'
 
 
-TOC_FIELD = "".join(
+# Inline "Table of Contents" heading, placed immediately above the entries. The
+# .docm's heading is a floating textbox pinned to the top of the page (it overlaps
+# the letterhead grid); that copy is blanked in §7b, leaving its sibling red rule
+# in place, so the visible heading sits UNDER the rule and right on top of the list.
+TOC_HEADING = ('<w:p><w:pPr><w:pStyle w:val="TOCHeading"/>'
+               '<w:spacing w:before="240" w:after="120"/></w:pPr>'
+               '<w:r><w:rPr><w:rFonts w:ascii="Jost" w:hAnsi="Jost"/></w:rPr>'
+               '<w:t>Table of Contents</w:t></w:r></w:p>')
+TOC_FIELD = TOC_HEADING + "".join(
     _toc_paragraph(t, p, first=(i == 0), last=(i == len(_TOC_ENTRIES) - 1))
     for i, (t, p) in enumerate(_TOC_ENTRIES))
 PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
@@ -451,6 +459,22 @@ for _band in ("Cover.Address", "Cover.Email"):
 # (991F2B) used for the same heading in TwoBlues.docx. The title uses the
 # TOCHeading paragraph style; A29926 lives in TOCHeading + TOCHeadingChar.
 styles = rep(styles, '<w:color w:val="A29926"/>', '<w:color w:val="991F2B"/>', 2)
+
+# Blank the floating "Table of Contents" heading (docPr "TOC.Header"), whose text is
+# pinned to the top of the page overlapping the letterhead grid. Its sibling red
+# rule ("TOC.Rule") is left intact; the heading is re-added inline just above the
+# entries (TOC_HEADING), so it reads under the rule and next to the list. The
+# paragraph is byte-identical in the DrawingML Choice and the VML Fallback (2x).
+_TITLE = ('<w:p w14:paraId="765DAD54" w14:textId="20581A89" w:rsidR="00D27C93" '
+          'w:rsidRPr="007777AC" w:rsidRDefault="004A2D83" w:rsidP="000345E4">'
+          '<w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr>'
+          '<w:r w:rsidRPr="007777AC"><w:t xml:space="preserve">Table of </w:t></w:r>'
+          '<w:r w:rsidR="007777AC" w:rsidRPr="007777AC"><w:t>Content</w:t></w:r>'
+          '<w:r w:rsidR="007777AC"><w:t>s</w:t></w:r></w:p>')
+_TITLE_BLANK = ('<w:p w14:paraId="765DAD54" w14:textId="20581A89" w:rsidR="00D27C93" '
+                'w:rsidRPr="007777AC" w:rsidRDefault="004A2D83" w:rsidP="000345E4">'
+                '<w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr></w:p>')
+doc = rep(doc, _TITLE, _TITLE_BLANK, 2)
 
 # ── 8. write + validate ──
 edited = {
