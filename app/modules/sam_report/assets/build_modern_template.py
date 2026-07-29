@@ -433,6 +433,25 @@ _ins = _ps + len(_pstyle)
 assert "<w:pageBreakBefore/>" not in doc[_at:doc.find("</w:p>", _at)]
 doc = doc[:_ins] + "<w:pageBreakBefore/>" + doc[_ins:]
 
+# Remove the cover's floating red address/email band shapes (docPr "Cover.Address"
+# / "Cover.Email"). They're part of the .docm cover design but LibreOffice lays
+# them out on the Table-of-Contents page as a stray red band; the cover already
+# carries this info in its Owner / EPC / Engineering-Company text blocks, and the
+# engineer's reference (TwoBlues.docx) shows no such band on the TOC page. Each is
+# a self-contained <mc:AlternateContent> (DrawingML Choice + VML Fallback).
+for _band in ("Cover.Address", "Cover.Email"):
+    while _band in doc:
+        _k = doc.find(_band)
+        _ba = doc.rfind("<mc:AlternateContent", 0, _k)
+        _bb = doc.find("</mc:AlternateContent>", _k) + len("</mc:AlternateContent>")
+        assert _ba != -1 and _bb > _ba, f"{_band} AlternateContent bounds not found"
+        doc = doc[:_ba] + doc[_bb:]
+
+# "Table of Contents" title: recolor from the .docm's gold (A29926) to the maroon
+# (991F2B) used for the same heading in TwoBlues.docx. The title uses the
+# TOCHeading paragraph style; A29926 lives in TOCHeading + TOCHeadingChar.
+styles = rep(styles, '<w:color w:val="A29926"/>', '<w:color w:val="991F2B"/>', 2)
+
 # ── 8. write + validate ──
 edited = {
     "word/document.xml": doc,
