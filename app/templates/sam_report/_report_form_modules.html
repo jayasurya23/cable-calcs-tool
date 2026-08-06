@@ -1,5 +1,6 @@
 {# Modules section — re-rendered on add/remove. Self-contained (stats + list +
-   add control) so a single innerHTML swap of #modules-section stays consistent. #}
+   drag-and-drop add control) so a single innerHTML swap of #modules-section
+   stays consistent. Drag-and-drop is wired in /static/js/dropzone.js. #}
 <div class="derived-stats">
   <span class="derived-label">Auto from the uploaded data:</span>
   <span class="chip"><b>Years</b> {{ stats.year_start }}–{{ stats.year_end }}</span>
@@ -16,9 +17,11 @@
     <input class="equip-input module-label" type="text"
            name="module_label_{{ loop.index0 }}" value="{{ m.label }}"
            placeholder="Module label (e.g. 460 W Module)">
-    <span class="module-file" title="{{ m.name }}">{{ m.name }}</span>
+    <span class="module-file" title="{{ m.name }}">📊 {{ m.name }}</span>
     {% if m.pysam %}
-    <span class="chip" title="System Size / DC-AC filled from this module's pysam">pysam ✓</span>
+    <span class="chip chip-ok" title="System Size / DC-AC filled from this module’s pysam">📄 pysam</span>
+    {% elif loop.index0 > 0 %}
+    <span class="chip chip-dim" title="No pysam — this module’s System Size / DC-AC show a dash">no pysam</span>
     {% endif %}
     {% if loop.index0 > 0 %}
     <button type="button" class="btn-remove" title="Remove module"
@@ -30,16 +33,31 @@
   {% endfor %}
 </div>
 
-<div class="add-module">
-  <input type="file" id="new-module-file" name="new_module_file" accept=".xlsx,.xlsm">
-  <input type="file" id="new-module-pysam" name="new_module_pysam" accept=".json"
-         title="Optional pysam JSON — fills this module's System Size / DC-AC in Project Information">
-  <input type="text" id="new-module-label" name="new_module_label"
-         placeholder="New module label (optional)">
-  <button type="button" class="btn btn-secondary btn-sm"
-          hx-post="/sam/report/{{ upload_id }}/module"
-          hx-target="#modules-section" hx-swap="innerHTML"
-          hx-include="closest form" hx-encoding="multipart/form-data">+ Add module</button>
+<div class="module-add">
+  <div class="js-dropzone dropzone" tabindex="0" role="button"
+       aria-label="Add a module — drop its Excel workbook and optional pysam JSON, or click to browse">
+    <input type="file" id="mod-file-picker" accept=".xlsx,.xlsm,.json" multiple hidden>
+    <div class="dz-inner">
+      <span class="dz-icon" aria-hidden="true">⬆</span>
+      <span class="dz-copy">
+        <span class="dz-title">Add a module — drop files here</span>
+        <span class="dz-sub">Excel <b>.xlsx</b> + optional pysam <b>.json</b> &nbsp;·&nbsp; or click to browse</span>
+      </span>
+    </div>
+    <div id="dz-files" class="dz-files" hidden></div>
+  </div>
+
+  {# Hidden inputs the dropzone populates; HTMX submits them with the form. #}
+  <input type="file" name="new_module_file" id="new-module-file" accept=".xlsx,.xlsm" hidden>
+  <input type="file" name="new_module_pysam" id="new-module-pysam" accept=".json" hidden>
+
+  <div class="module-add-row">
+    <input type="text" name="new_module_label" id="new-module-label"
+           placeholder="Module label (optional — auto-set from the pysam wattage)">
+    <button type="button" id="add-module-btn" class="btn btn-primary btn-sm" disabled
+            hx-post="/sam/report/{{ upload_id }}/module"
+            hx-target="#modules-section" hx-swap="innerHTML"
+            hx-include="closest form" hx-encoding="multipart/form-data">+ Add module</button>
+  </div>
+  <p id="dz-note" class="hint" hidden></p>
 </div>
-<p class="hint">Add a module's <b>pysam JSON</b> to fill its System Size and DC/AC ratio per module
-  in Project Information (the workbook alone carries only Voc/Isc).</p>
