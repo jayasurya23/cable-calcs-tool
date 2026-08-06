@@ -134,10 +134,11 @@ async def upload(
                                .where(Revision.analysis_id == analysis.id)
                                .order_by(Revision.rev_number)).all()
         next_rev = storage.next_rev_number(db, analysis)
+        previews, stats = report_service.modules_preview(report.upload_id)
         ctx.update(project=prefill, analysis=analysis,
                    modules=report_service.load_modules(report.upload_id),
                    datasheets=report_service.load_datasheets(report.upload_id),
-                   stats=report_service.derived_stats(report.upload_id),
+                   previews=previews, stats=stats,
                    revisions=revisions, next_rev=next_rev)
     return templates.TemplateResponse(request, "sam_report/_report.html", ctx)
 
@@ -175,12 +176,14 @@ async def add_module(request: Request, upload_id: str):
     else:
         error = "Choose a workbook to add as a module."
 
+    previews, stats = report_service.modules_preview(upload_id)
     return templates.TemplateResponse(
         request, "sam_report/_report_form_modules.html",
         {
             "upload_id": upload_id,
             "modules": report_service.load_modules(upload_id),
-            "stats": report_service.derived_stats(upload_id),
+            "previews": previews,
+            "stats": stats,
             "error": error,
         },
     )
@@ -193,12 +196,14 @@ async def remove_module(request: Request, upload_id: str, index: int):
     form = await request.form()
     report_service.save_labels(upload_id, _labels_from_form(form))
     report_service.remove_module(upload_id, index)
+    previews, stats = report_service.modules_preview(upload_id)
     return templates.TemplateResponse(
         request, "sam_report/_report_form_modules.html",
         {
             "upload_id": upload_id,
             "modules": report_service.load_modules(upload_id),
-            "stats": report_service.derived_stats(upload_id),
+            "previews": previews,
+            "stats": stats,
             "error": None,
         },
     )
@@ -285,12 +290,13 @@ def open_analysis(request: Request, analysis_id: int,
     revisions = db.scalars(select(Revision).where(Revision.analysis_id == analysis.id)
                            .order_by(Revision.rev_number)).all()
     next_rev = storage.next_rev_number(db, analysis)
+    previews, stats = report_service.modules_preview(upload_id)
     return templates.TemplateResponse(request, "sam_report/analysis.html", {
         "report": report, "upload_id": upload_id, "project_rec": proj_rec,
         "project": prefill, "analysis": analysis,
         "modules": report_service.load_modules(upload_id),
         "datasheets": report_service.load_datasheets(upload_id),
-        "stats": report_service.derived_stats(upload_id),
+        "previews": previews, "stats": stats,
         "revisions": revisions, "next_rev": next_rev,
     })
 

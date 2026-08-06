@@ -23,8 +23,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.models import Analysis, Project, User
 from . import converter, docx_fill, parser, report_builder
+from .excel_writer import TABLE_COLUMNS
 from .report_models import ReportModule, ReportProject
-from .service import UPLOAD_META_FILE, _upload_dir
+from .service import UPLOAD_META_FILE, _build_table, _upload_dir
 
 MODULES_FILE = "modules.json"
 DATASHEETS_FILE = "datasheets.json"
@@ -477,6 +478,36 @@ def derived_stats(upload_id: str) -> dict:
         "num_runs": ctx.num_runs,
         "num_modules": len(modules),
     }
+
+
+def modules_preview(upload_id: str) -> tuple[list[dict], dict]:
+    """Per-module on-page tables + the derived stats, parsing each workbook once.
+
+    Each preview carries the SAME table the single-module page shows (Year / Max
+    Isc / Max Voc / 3-hr rolling, with a Maximum footer row), so every module's
+    calcs are visible on the report form — not just the first upload's.
+    Returns (previews, stats).
+    """
+    dest_dir = _upload_dir(upload_id)
+    meta = _load_upload_meta(dest_dir)
+    entries = load_modules(upload_id)
+    previews: list[dict] = []
+    years: set[int] = set()
+    for i, e in enumerate(entries):
+        runs, _ = parser.extract_runs(dest_dir / e["path"])
+        years.update(r.year for r in runs)
+        has_pysam = bool(e.get("pysam")) or (i == 0 and bool(meta.get("pysam")))
+        previews.append({
+            "label": e.get("label") or report_builder.default_module_label(None, i),
+            "name": e.get("name") or Path(e["path"]).name,
+            "has_pysam": has_pysam,
+            "columns": list(TABLE_COLUMNS) if runs else [],
+            "rows": _build_table(runs) if runs else [],
+        })
+    ys = sorted(years)
+    stats = {"year_start": ys[0] if ys else None, "year_end": ys[-1] if ys else None,
+             "num_runs": len(ys), "num_modules": len(entries)}
+    return previews, stats
 
 
 def generate_report(upload_id: str, project: ReportProject,

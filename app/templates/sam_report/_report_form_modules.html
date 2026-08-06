@@ -33,6 +33,37 @@
   {% endfor %}
 </div>
 
+{% if previews and previews|length > 1 %}
+<div class="module-previews">
+  <h5 class="mp-title">Per-module calculations <span class="dims">— the same table each module produces</span></h5>
+  {% for pv in previews %}
+  <details class="module-preview" {% if loop.first %}open{% endif %}>
+    <summary>
+      <span class="module-idx">{{ loop.index }}</span>
+      <b>{{ pv.label }}</b>
+      {% if pv.rows %}<span class="dims">max Isc {{ pv.rows[-1].cells.get(pv.columns[1]) }} A · max Voc {{ pv.rows[-1].cells.get(pv.columns[2]) }} V</span>{% endif %}
+    </summary>
+    {% if pv.columns %}
+    <div class="table-wrap table-output">
+      <table class="data-table">
+        <thead><tr>{% for c in pv.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in pv.rows %}
+          <tr {% if row.cells.get(pv.columns[0]) == "Maximum" %}class="row-max"{% endif %}>
+            {% for c in pv.columns %}<td>{{ row.cells.get(c, "") }}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="hint">No SAM runs found in <code>{{ pv.name }}</code>.</p>
+    {% endif %}
+  </details>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="module-add">
   <div class="js-dropzone dropzone" tabindex="0" role="button"
        aria-label="Add a module — drop its Excel workbook and optional pysam JSON, or click to browse">

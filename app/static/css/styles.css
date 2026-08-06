@@ -388,6 +388,20 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 .dz-chip.dz-xlsx { border-color: rgba(46, 125, 50, .6); }
 .dz-chip.dz-json { border-color: rgba(184, 134, 11, .6); }
 
+/* ── Per-module calculation tables ────────────────────── */
+.module-previews { margin-top: 16px; }
+.mp-title { font-size: 14px; margin: 0 0 8px; color: var(--text); }
+.module-preview { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--panel); }
+.module-preview > summary {
+  cursor: pointer; padding: 9px 12px; display: flex; align-items: center; gap: 10px;
+  font-size: 13px; list-style: none;
+}
+.module-preview > summary::-webkit-details-marker { display: none; }
+.module-preview > summary::before { content: "\25B8"; color: var(--muted); font-size: 11px; }
+.module-preview[open] > summary::before { content: "\25BE"; }
+.module-preview > summary .dims { margin-left: auto; text-align: right; }
+.module-preview .table-wrap { margin: 0 12px 12px; }
+
 /* ── Wayfinding: breadcrumb + stepper ────────────────── */
 .breadcrumb {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
