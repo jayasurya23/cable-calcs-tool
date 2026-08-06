@@ -165,10 +165,11 @@ async def add_module(request: Request, upload_id: str):
 
     error = None
     upload = form.get("new_module_file")
+    pysam = form.get("new_module_pysam")
     label = str(form.get("new_module_label", "") or "")
     if upload is not None and getattr(upload, "filename", ""):
         try:
-            report_service.add_module(upload_id, upload, label)
+            report_service.add_module(upload_id, upload, label, pysam=pysam)
         except ValueError as exc:
             error = str(exc)
     else:

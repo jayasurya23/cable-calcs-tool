@@ -515,6 +515,7 @@ expected = {"«PROJECT_TITLE»", "«PROJECT_NAME»", "«PROJECT_ID»", "«REPORT
             "«ENG_NAME»", "«ENG_PHONE»", "«DESIGNER»", "«CHECKER»",
             "«COORDINATES»", "«GCR»", "«MODULES_PER_STRING»", "«MODULE_MODEL»",
             "«INVERTER_MODEL»", "«DC_AC_RATIO»", "«SYSTEM_SIZE»", "«ALBEDO_TEXT»",
+            "«MODULE_DATASHEET»",
             "«WEATHER_FILE»", "«MODULES_PHRASE»", "«NUM_RUNS»", "«YEAR_START»",
             "«YEAR_END»", "«YEAR_RANGE»", "«RESULTS_TABLE»", "«REV_LAST»",
             *(f"«REV_DATE_{i}»" for i in range(7))}

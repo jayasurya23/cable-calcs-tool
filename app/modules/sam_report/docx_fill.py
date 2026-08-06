@@ -60,10 +60,44 @@ def _revision_tokens(revision: str, date: str) -> dict[str, str]:
     return toks
 
 
+# Multi-line inside a single run: split the value across <w:t>…</w:t> with <w:br/>
+# between (valid because the token already sits inside a <w:t>…</w:t>).
+_BR = "</w:t><w:br/><w:t>"
+
+
+def _per_module_tokens(ctx: ReportContext) -> dict[str, str]:
+    """Module-dependent Project-Info tokens. One module -> the single project
+    value (unchanged). Several modules -> one line per module (label + value),
+    with a dash where a module has no pysam to derive System Size / DC-AC from."""
+    p = ctx.project
+    mods = ctx.modules
+    if len(mods) <= 1:
+        return {
+            "«MODULE_MODEL»": _esc(p.module_model),      # Project-Info cell
+            "«MODULE_DATASHEET»": _esc(p.module_model),  # Inputs "Module Datasheet:" line
+            "«SYSTEM_SIZE»": _esc(p.system_size_dc),
+            "«DC_AC_RATIO»": _esc(p.dc_ac_ratio),
+        }
+
+    def _lines(value_of):
+        return _BR.join(_esc(f"{m.label}: {value_of(m) or '—'}") for m in mods)
+
+    return {
+        # Project-Info cell (centered): one module label per line.
+        "«MODULE_MODEL»": _BR.join(_esc(m.label) for m in mods),
+        # Inputs line is justified — a per-line break there gets stretched, so keep
+        # the datasheet list on one comma-separated line.
+        "«MODULE_DATASHEET»": _esc(", ".join(m.label for m in mods)),
+        "«SYSTEM_SIZE»": _lines(lambda m: m.system_size_dc),
+        "«DC_AC_RATIO»": _lines(lambda m: m.dc_ac_ratio),
+    }
+
+
 def _tokens(ctx: ReportContext) -> dict[str, str]:
     p = ctx.project
     return {
         **_revision_tokens(p.revision, p.date),
+        **_per_module_tokens(ctx),
         "«PROJECT_TITLE»": _esc(p.project_name.upper()),
         "«PROJECT_NAME»": _esc(p.project_name),
         "«PROJECT_ID»": _esc(p.project_id),
@@ -80,10 +114,8 @@ def _tokens(ctx: ReportContext) -> dict[str, str]:
         "«COORDINATES»": _esc(p.coordinates),
         "«GCR»": _esc(p.gcr),
         "«MODULES_PER_STRING»": _esc(p.modules_per_string),
-        "«MODULE_MODEL»": _esc(p.module_model),
         "«INVERTER_MODEL»": _esc(p.inverter_model),
-        "«DC_AC_RATIO»": _esc(p.dc_ac_ratio),
-        "«SYSTEM_SIZE»": _esc(p.system_size_dc),
+        # «MODULE_MODEL» / «SYSTEM_SIZE» / «DC_AC_RATIO» come from _per_module_tokens.
         "«ALBEDO_TEXT»": _esc(p.albedo_text),
         "«WEATHER_FILE»": _esc(p.weather_file),
         "«REVISION»": _esc(p.revision),

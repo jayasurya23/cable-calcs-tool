@@ -212,8 +212,10 @@ def collect_revision_files(upload_id: str) -> list[Path]:
         files.append(wb.with_name(f"{wb.stem} - Output{wb.suffix}"))
     if meta.get("pysam"):
         files.append(dest_dir / meta["pysam"])
-    for entry in load_modules(upload_id)[1:]:  # extra module workbooks
+    for entry in load_modules(upload_id)[1:]:  # extra module workbooks (+ their pysam)
         files.append(dest_dir / entry["path"])
+        if entry.get("pysam"):
+            files.append(dest_dir / entry["pysam"])
     return [f for f in files if f.is_file()]
 
 
@@ -275,8 +277,14 @@ def save_labels(upload_id: str, labels: dict[int, str]) -> None:
         _save_modules(dest_dir, entries)
 
 
-def add_module(upload_id: str, upload: UploadFile, label: str) -> list[dict]:
-    """Stage an extra module workbook. Raises ValueError if it isn't a SAM export."""
+def add_module(upload_id: str, upload: UploadFile, label: str,
+               pysam: UploadFile | None = None) -> list[dict]:
+    """Stage an extra module workbook (and, optionally, its own pysam JSON).
+
+    The pysam powers this module's Project-Information values (module model, DC
+    nameplate, DC/AC ratio) and auto-labels it by wattage. Raises ValueError if
+    the workbook isn't a SAM export.
+    """
     dest_dir = _upload_dir(upload_id)
     entries = load_modules(upload_id)
 
@@ -295,11 +303,22 @@ def add_module(upload_id: str, upload: UploadFile, label: str) -> list[dict]:
             "open-circuit / short-circuit sheets found)."
         )
 
-    entries.append({
-        "path": rel,
-        "name": safe,
-        "label": label.strip() or report_builder.default_module_label(None, len(entries)),
-    })
+    entry: dict = {"path": rel, "name": safe}
+    wattage = None
+    if pysam is not None and getattr(pysam, "filename", ""):
+        psafe = Path(pysam.filename).name
+        prel = f"modules/{uuid.uuid4().hex[:8]}_{psafe}"
+        with open(dest_dir / prel, "wb") as out:
+            shutil.copyfileobj(pysam.file, out)
+        entry["pysam"] = prel
+        try:
+            wattage = report_builder.prefill_from_pysam(
+                parser.parse_pysam_json(dest_dir / prel)).get("module_wattage")
+        except Exception:  # noqa: BLE001 - bad pysam still leaves a usable module
+            wattage = None
+
+    entry["label"] = label.strip() or report_builder.default_module_label(wattage, len(entries))
+    entries.append(entry)
     _save_modules(dest_dir, entries)
     return entries
 
@@ -395,7 +414,9 @@ def prefill_project(upload_id: str) -> ReportProject:
     """
     dest_dir = _upload_dir(upload_id)
     meta = _load_upload_meta(dest_dir)
-    pf = _pysam_prefill(dest_dir, meta)
+    # Shared fields come from the primary pysam (the upload's, or the first module
+    # that has one) — coordinates/GCR/mps/inverter/weather are the same for all modules.
+    pf = _pysam_prefill(dest_dir, {"pysam": _primary_pysam_rel(upload_id)})
 
     from .service import _load_equipment_overrides  # avoid import cycle at module load
     overrides = _load_equipment_overrides(dest_dir)
@@ -418,14 +439,31 @@ def prefill_project(upload_id: str) -> ReportProject:
     )
 
 
+def _primary_pysam_rel(upload_id: str) -> str | None:
+    """The pysam that supplies the SHARED (project-level) Project-Info fields —
+    coordinates, GCR, modules-per-string, inverter, weather, albedo (same for
+    every module): the upload's own pysam, else the first module that carries one."""
+    meta = _load_upload_meta(_upload_dir(upload_id))
+    if meta.get("pysam"):
+        return meta["pysam"]
+    for e in load_modules(upload_id):
+        if e.get("pysam"):
+            return e["pysam"]
+    return None
+
+
 def _build_modules(upload_id: str, labels: dict[int, str]) -> list[ReportModule]:
     dest_dir = _upload_dir(upload_id)
     entries = load_modules(upload_id)
+    meta = _load_upload_meta(dest_dir)
     modules: list[ReportModule] = []
     for i, e in enumerate(entries):
         label = (labels.get(i) or e.get("label") or "").strip() \
             or report_builder.default_module_label(None, i)
-        modules.append(report_builder.module_from_workbook(dest_dir / e["path"], label))
+        # Module 0's pysam is the upload's (meta); extra modules carry their own.
+        pysam_rel = meta.get("pysam") if i == 0 else e.get("pysam")
+        pysam_path = (dest_dir / pysam_rel) if pysam_rel else None
+        modules.append(report_builder.module_from_workbook(dest_dir / e["path"], label, pysam_path))
     return modules
 
 

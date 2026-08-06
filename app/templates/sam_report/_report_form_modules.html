@@ -17,6 +17,9 @@
            name="module_label_{{ loop.index0 }}" value="{{ m.label }}"
            placeholder="Module label (e.g. 460 W Module)">
     <span class="module-file" title="{{ m.name }}">{{ m.name }}</span>
+    {% if m.pysam %}
+    <span class="chip" title="System Size / DC-AC filled from this module's pysam">pysam ✓</span>
+    {% endif %}
     {% if loop.index0 > 0 %}
     <button type="button" class="btn-remove" title="Remove module"
             hx-post="/sam/report/{{ upload_id }}/module/remove/{{ loop.index0 }}"
@@ -29,6 +32,8 @@
 
 <div class="add-module">
   <input type="file" id="new-module-file" name="new_module_file" accept=".xlsx,.xlsm">
+  <input type="file" id="new-module-pysam" name="new_module_pysam" accept=".json"
+         title="Optional pysam JSON — fills this module's System Size / DC-AC in Project Information">
   <input type="text" id="new-module-label" name="new_module_label"
          placeholder="New module label (optional)">
   <button type="button" class="btn btn-secondary btn-sm"
@@ -36,3 +41,5 @@
           hx-target="#modules-section" hx-swap="innerHTML"
           hx-include="closest form" hx-encoding="multipart/form-data">+ Add module</button>
 </div>
+<p class="hint">Add a module's <b>pysam JSON</b> to fill its System Size and DC/AC ratio per module
+  in Project Information (the workbook alone carries only Voc/Isc).</p>

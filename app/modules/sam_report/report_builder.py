@@ -154,17 +154,36 @@ def default_module_label(wattage: int | None, index: int) -> str:
     return f"Module {index + 1}"
 
 
-def module_from_workbook(workbook_path: str | Path, label: str) -> ReportModule:
-    """Parse one workbook into a ReportModule (year, 3-hr-avg Isc, Voc rows)."""
+def module_from_workbook(workbook_path: str | Path, label: str,
+                         pysam_path: str | Path | None = None) -> ReportModule:
+    """Parse one workbook into a ReportModule (year, 3-hr-avg Isc, Voc rows).
+
+    When `pysam_path` is given, also derive this module's own Project-Information
+    values (module model, DC nameplate, DC/AC ratio) from it — so a multi-module
+    report can show them per module. Without a pysam these stay blank (the
+    workbook alone carries only Voc/Isc, not system size).
+    """
     runs, _warnings = parser.extract_runs(workbook_path)
     rows = [
         ResultRow(year=r.year, isc_3hr_avg=r.max_isc_rolling_avg_a, voc=r.max_voc_v)
         for r in sorted(runs, key=lambda x: x.year)
     ]
+    module_model = system_size_dc = dc_ac_ratio = ""
+    if pysam_path and Path(pysam_path).is_file():
+        try:
+            pf = prefill_from_pysam(parser.parse_pysam_json(pysam_path))
+            module_model = pf["module_model"]
+            system_size_dc = pf["system_size_dc"]
+            dc_ac_ratio = pf["dc_ac_ratio"]
+        except Exception:  # noqa: BLE001 - per-module prefill is best-effort
+            pass
     return ReportModule(
         label=label,
         source_workbook=Path(workbook_path).name,
         rows=rows,
+        module_model=module_model,
+        system_size_dc=system_size_dc,
+        dc_ac_ratio=dc_ac_ratio,
     )
 
 

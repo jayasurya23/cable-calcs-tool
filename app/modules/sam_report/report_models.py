@@ -28,6 +28,14 @@ class ReportModule(BaseModel):
     source_workbook: str               # staged filename this data came from
     rows: list[ResultRow] = Field(default_factory=list)
 
+    # Per-module Project-Information values, derived from this module's OWN pysam
+    # (when one was uploaded for it). Blank when the module has no pysam — the
+    # workbook alone doesn't carry system size / DC-AC. Used to fill the
+    # Project-Information block per module when several modules are compared.
+    module_model: str = ""
+    system_size_dc: str = ""
+    dc_ac_ratio: str = ""
+
     @property
     def max_isc_3hr(self) -> float:
         return max((r.isc_3hr_avg for r in self.rows), default=0.0)
