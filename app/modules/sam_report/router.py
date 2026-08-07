@@ -211,17 +211,22 @@ async def remove_module(request: Request, upload_id: str, index: int):
 
 @router.post("/report/{upload_id}/datasheet", response_class=HTMLResponse)
 async def add_datasheet(request: Request, upload_id: str):
-    """Add a datasheet PDF (appended to the report PDF) and re-render the section."""
+    """Add one or more datasheet PDFs (appended to the report PDF) and re-render
+    the section. The file input auto-posts on change, so a datasheet is added the
+    moment it's dropped/selected — no separate 'Add' click to forget."""
     _require_upload(upload_id)
     form = await request.form()
     error = None
-    upload = form.get("new_datasheet_file")
-    if upload is not None and getattr(upload, "filename", ""):
+    uploads = [u for u in form.getlist("new_datasheet_file")
+               if u is not None and getattr(u, "filename", "")]
+    added = 0
+    for upload in uploads:
         try:
             report_service.add_datasheet(upload_id, upload)
+            added += 1
         except ValueError as exc:
             error = str(exc)
-    else:
+    if added == 0 and error is None:
         error = "Choose a PDF to add as a datasheet."
     return templates.TemplateResponse(
         request, "sam_report/_report_form_datasheets.html",

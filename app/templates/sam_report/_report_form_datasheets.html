@@ -1,29 +1,38 @@
-{# Datasheets section — re-rendered on add/remove. Self-contained (list + add
-   control) so a single innerHTML swap of #datasheets-section stays consistent.
-   These PDFs are appended to the END of the generated report PDF. #}
+{# Datasheets section — re-rendered on add/remove. The file input auto-posts on
+   change (it IS the HTMX trigger — no separate "Add" click, no hx-include), so a
+   PDF is appended the moment it's dropped or picked. Appended to the END of the
+   generated report PDF. #}
 {% set datasheets = datasheets|default([]) %}
 {% if ds_error %}<div class="warning">⚠ {{ ds_error }}</div>{% endif %}
 
+{% if datasheets %}
 <div class="module-rows">
   {% for d in datasheets %}
   <div class="module-row">
     <span class="module-idx">{{ loop.index }}</span>
-    <span class="module-file" title="{{ d.name }}">{{ d.name }}</span>
-    {% if d.pages %}<span class="chip">{{ d.pages }} pp</span>{% endif %}
+    <span class="module-file" title="{{ d.name }}">📄 {{ d.name }}</span>
+    {% if d.pages %}<span class="chip chip-ok">{{ d.pages }} pp</span>{% endif %}
     <button type="button" class="btn-remove" title="Remove datasheet"
             hx-post="/sam/report/{{ upload_id }}/datasheet/remove/{{ loop.index0 }}"
             hx-target="#datasheets-section" hx-swap="innerHTML">&times;</button>
   </div>
-  {% else %}
-  <div class="dims" style="padding:2px 0 6px">No datasheets added yet.</div>
   {% endfor %}
 </div>
+{% endif %}
 
-<div class="add-module">
-  <input type="file" id="new-datasheet-file" name="new_datasheet_file"
-         accept="application/pdf,.pdf">
-  <button type="button" class="btn btn-secondary btn-sm"
-          hx-post="/sam/report/{{ upload_id }}/datasheet"
-          hx-target="#datasheets-section" hx-swap="innerHTML"
-          hx-include="closest form" hx-encoding="multipart/form-data">+ Add datasheet</button>
+<div class="js-ds-dropzone dropzone" tabindex="0" role="button"
+     aria-label="Add datasheet PDFs — drop them here or click to browse">
+  <input type="file" id="ds-file-picker" name="new_datasheet_file"
+         accept="application/pdf,.pdf" multiple hidden
+         hx-post="/sam/report/{{ upload_id }}/datasheet" hx-trigger="change"
+         hx-target="#datasheets-section" hx-swap="innerHTML"
+         hx-encoding="multipart/form-data" hx-indicator="#ds-spin">
+  <div class="dz-inner">
+    <span class="dz-icon" aria-hidden="true">⬆</span>
+    <span class="dz-copy">
+      <span class="dz-title">{% if datasheets %}Add more datasheets{% else %}Add datasheet PDFs{% endif %}</span>
+      <span class="dz-sub">Drop PDFs here or click to browse &nbsp;·&nbsp; appended to the end of the report PDF</span>
+    </span>
+    <span id="ds-spin" class="htmx-indicator spinner" style="margin-left:10px">Adding…</span>
+  </div>
 </div>

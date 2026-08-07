@@ -75,13 +75,36 @@
     }
   }
 
-  // Click the zone -> open the file browser (but not when the click IS the picker).
+  var SEL = ".js-dropzone, .js-ds-dropzone";
+
+  // The file input inside a zone: module zone -> #mod-file-picker (routed by JS);
+  // datasheet zone -> #ds-file-picker (which auto-posts itself via HTMX).
+  function zonePicker(dz) {
+    return dz.querySelector('input[type="file"]');
+  }
+
+  // Feed files to a zone. Datasheet zone: set them on its own picker and fire a
+  // change event so HTMX auto-uploads (the input is the request element). Module
+  // zone: route by extension into the workbook / pysam inputs and preview.
+  function feed(dz, fileList) {
+    if (dz.classList.contains("js-ds-dropzone")) {
+      var picker = zonePicker(dz);
+      if (!picker) return;
+      var dt = new DataTransfer();
+      for (var i = 0; i < fileList.length; i++) dt.items.add(fileList[i]);
+      picker.files = dt.files;
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    } else {
+      handle(dz, fileList);
+    }
+  }
+
   document.addEventListener("click", function (e) {
-    var dz = e.target.closest && e.target.closest(".js-dropzone");
+    var dz = e.target.closest && e.target.closest(SEL);
     if (!dz) return;
-    if (e.target.id === "mod-file-picker") return;
-    var r = refs(dz);
-    if (r.picker) r.picker.click();
+    if (e.target.matches && e.target.matches('input[type="file"]')) return;
+    var picker = zonePicker(dz);
+    if (picker) picker.click();
   });
 
   document.addEventListener("change", function (e) {
@@ -93,32 +116,32 @@
   });
 
   // Prevent the browser from navigating to a dropped file anywhere on the page;
-  // only the dropzone routes them.
+  // only the dropzones route them.
   document.addEventListener("dragover", function (e) {
     e.preventDefault();
-    var dz = e.target.closest && e.target.closest(".js-dropzone");
+    var dz = e.target.closest && e.target.closest(SEL);
     if (dz) dz.classList.add("dragover");
   });
   document.addEventListener("dragleave", function (e) {
-    var dz = e.target.closest && e.target.closest(".js-dropzone");
+    var dz = e.target.closest && e.target.closest(SEL);
     if (dz && !dz.contains(e.relatedTarget)) dz.classList.remove("dragover");
   });
   document.addEventListener("drop", function (e) {
     e.preventDefault();
-    var dz = e.target.closest && e.target.closest(".js-dropzone");
+    var dz = e.target.closest && e.target.closest(SEL);
     if (!dz) return;
     dz.classList.remove("dragover");
-    handle(dz, e.dataTransfer.files);
+    feed(dz, e.dataTransfer.files);
   });
 
   // Enter/Space on the focused zone opens the browser (keyboard accessibility).
   document.addEventListener("keydown", function (e) {
-    var dz = e.target.closest && e.target.closest(".js-dropzone");
+    var dz = e.target.closest && e.target.closest(SEL);
     if (!dz) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      var r = refs(dz);
-      if (r.picker) r.picker.click();
+      var picker = zonePicker(dz);
+      if (picker) picker.click();
     }
   });
 })();
