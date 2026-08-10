@@ -82,12 +82,17 @@ def _per_module_tokens(ctx: ReportContext) -> dict[str, str]:
     def _lines(value_of):
         return _BR.join(_esc(f"{m.label}: {value_of(m) or '—'}") for m in mods)
 
+    # Prefer each module's real "Manufacturer — Model" (matched from its pysam);
+    # fall back to the engineer's label when there's no pysam/match.
+    def _name(m):
+        return m.module_model or m.label
+
     return {
-        # Project-Info cell (centered): one module label per line.
-        "«MODULE_MODEL»": _BR.join(_esc(m.label) for m in mods),
+        # Project-Info cell (centered): one module per line.
+        "«MODULE_MODEL»": _BR.join(_esc(_name(m)) for m in mods),
         # Inputs line is justified — a per-line break there gets stretched, so keep
         # the datasheet list on one comma-separated line.
-        "«MODULE_DATASHEET»": _esc(", ".join(m.label for m in mods)),
+        "«MODULE_DATASHEET»": _esc(", ".join(_name(m) for m in mods)),
         "«SYSTEM_SIZE»": _lines(lambda m: m.system_size_dc),
         "«DC_AC_RATIO»": _lines(lambda m: m.dc_ac_ratio),
     }

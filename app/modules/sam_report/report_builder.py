@@ -138,7 +138,13 @@ def prefill_from_pysam(pysam_data: dict) -> dict:
         pmax = eq.module_specs.get("Pmax")
         if pmax and (w := re.search(r"\d+", pmax)):
             out["module_wattage"] = int(w.group(0))
-        out["module_model"] = _equipment_label(
+        # The pysam has no module name — recover "Manufacturer — Model" by matching
+        # its CEC parameters against the CEC module database (kept fresh from NREL).
+        # Fall back to the generic model type + wattage when there's no match.
+        from . import cec_db
+        cec_db.maybe_refresh_async()
+        matched = cec_db.lookup_module_name(pysam_data)
+        out["module_model"] = matched or _equipment_label(
             eq.module_model, eq.module_model_type, eq.module_specs, "Pmax")
         out["inverter_model"] = _equipment_label(
             eq.inverter_model, eq.inverter_model_type, eq.inverter_specs, "Pac")
