@@ -18,9 +18,11 @@
            name="module_label_{{ loop.index0 }}" value="{{ m.label }}"
            placeholder="Module label (e.g. 460 W Module)">
     <span class="module-file" title="{{ m.name }}">📊 {{ m.name }}</span>
-    {% if m.pysam %}
+    {% set has_ps = (previews[loop.index0].has_pysam
+                     if previews and previews|length > loop.index0 else m.pysam) %}
+    {% if has_ps %}
     <span class="chip chip-ok" title="System Size / DC-AC filled from this module’s pysam">📄 pysam</span>
-    {% elif loop.index0 > 0 %}
+    {% else %}
     <span class="chip chip-dim" title="No pysam — this module’s System Size / DC-AC show a dash">no pysam</span>
     {% endif %}
     {% if loop.index0 > 0 %}

@@ -40,20 +40,40 @@
   </div>
 
   <div class="field">
-    <label for="workbook">SAM runs workbook <span class="req">*</span></label>
-    <input type="file" id="workbook" name="workbook" accept=".xlsx,.xlsm" required />
-    <small>Excel with all SAM runs (.xlsx / .xlsm).</small>
-  </div>
+    <label>Modules <span class="req">*</span></label>
+    <small style="margin-top:0;margin-bottom:10px">One SAM runs workbook per module.
+      Comparing several modules? Add them all here — they’ll sit side by side in the
+      Results table, each with its own System Size and DC/AC from its pysam.</small>
 
-  <div class="field">
-    <label for="pysam">pysam JSON <span class="opt">(optional)</span></label>
-    <input type="file" id="pysam" name="pysam" accept=".json" />
-    <small>SAM case-inputs JSON, if you have it — adds coordinates, GCR and modules-per-string.</small>
+    {# Row 1 keeps the original field names (workbook / pysam) so the route
+       signature and every existing caller stay unchanged. Extra rows are
+       module_wb_N / module_ps_N / module_label_N and are read from the raw form. #}
+    <div id="module-rows">
+      <div class="mod-row" data-mod-row="1">
+        <div class="mod-row-head"><b>Module 1</b></div>
+        <div class="mod-row-fields">
+          <label class="mod-f">Workbook <span class="req">*</span>
+            <input type="file" name="workbook" accept=".xlsx,.xlsm" required />
+          </label>
+          <label class="mod-f">pysam JSON <span class="opt">(optional)</span>
+            <input type="file" name="pysam" accept=".json" />
+          </label>
+          <label class="mod-f">Label <span class="opt">(optional)</span>
+            <input type="text" name="mod_label_1" placeholder="e.g. 615 W Module" />
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <button type="button" id="add-module-row" class="btn btn-secondary btn-sm"
+            style="margin-top:10px">+ Add another module</button>
+    <small>The pysam is what fills coordinates, GCR, modules-per-string, and each
+      module’s System Size / DC-AC — and names the module from the CEC database.</small>
   </div>
 
   <div class="actions">
     <button type="submit" class="btn btn-primary">Analyze</button>
-    <span id="spinner" class="htmx-indicator spinner">Analyzing…</span>
+    <span id="spinner" class="htmx-indicator spinner">Analyzing… (this can take ~15 s per module)</span>
   </div>
   <p class="hint" style="margin-top:14px">Next: we read your SAM runs, you review the report details
     (pre-filled from this project), then <strong>Generate</strong> files it here as revision <strong>R0</strong>.</p>

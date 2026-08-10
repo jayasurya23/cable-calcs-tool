@@ -296,7 +296,14 @@ def add_module(upload_id: str, upload: UploadFile, label: str,
     rel = f"modules/{uuid.uuid4().hex[:8]}_{safe}"
     service_mod.copy_limited(upload.file, dest_dir / rel, what="workbook")
 
-    runs, _ = parser.extract_runs(dest_dir / rel)
+    # openpyxl raises (BadZipFile etc.) on anything that isn't a real workbook —
+    # convert that to a ValueError so callers have ONE failure mode to handle, and
+    # always drop the staged file so a rejected upload leaves nothing behind.
+    try:
+        runs, _ = parser.extract_runs(dest_dir / rel)
+    except Exception as exc:  # noqa: BLE001 - any unreadable file is a user error
+        (dest_dir / rel).unlink(missing_ok=True)
+        raise ValueError(service_mod.friendly_upload_error(exc)) from exc
     if not runs:
         (dest_dir / rel).unlink(missing_ok=True)
         raise ValueError(

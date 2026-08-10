@@ -31,6 +31,22 @@ def _require_upload(upload_id: str) -> None:
         raise HTTPException(status_code=404, detail="Not found")
 
 
+def _extra_module_indices(form) -> set[int]:
+    """Row numbers of the extra module inputs on the New-analysis page.
+
+    Rows are added client-side and can be removed, so the indices are sparse —
+    scan for whatever `module_wb_N` keys actually arrived rather than counting.
+    """
+    out: set[int] = set()
+    for key in form.keys():
+        if key.startswith("module_wb_"):
+            try:
+                out.add(int(key[len("module_wb_"):]))
+            except ValueError:
+                continue
+    return out
+
+
 def _labels_from_form(form) -> dict[int, str]:
     labels: dict[int, str] = {}
     for key, value in form.items():
@@ -104,10 +120,11 @@ async def upload(
     project_id: int = Form(0),
     analysis_name: str = Form(""),
 ):
-    """Handle the upload, then render the report fragment (HTMX swaps it in).
+    """Handle the upload, then render the tabbed report fragment (HTMX swaps it in).
 
-    When the workbook is a valid SAM export we also render the report form inline
-    (hidden) so "Generate report" can reveal it instantly — no second request.
+    Row 1 of the New-analysis form is the `workbook`/`pysam` params; any further
+    module rows arrive as module_wb_N / module_ps_N / mod_label_N and are added to
+    the same analysis here, so a multi-module comparison is set up in one step.
     """
     proj_rec = db.get(Project, project_id) if project_id else None
     if proj_rec is None:
@@ -132,6 +149,29 @@ async def upload(
     if report.runs:
         analysis = report_service.get_or_create_analysis(
             db, proj_rec, report.upload_id, user, name=analysis_name.strip())
+
+        # Extra modules submitted on the same page (module_wb_N / module_ps_N /
+        # module_label_N). Row 1 is the `workbook`/`pysam` params above; these are
+        # rows 2+. A row whose file input was left empty is skipped, and a module
+        # that fails to parse warns without losing the rest of the upload.
+        form = await request.form()
+        row1_label = str(form.get("mod_label_1", "") or "").strip()
+        if row1_label:
+            report_service.save_labels(report.upload_id, {0: row1_label})
+        for idx in sorted(_extra_module_indices(form)):
+            wb = form.get(f"module_wb_{idx}")
+            if wb is None or not getattr(wb, "filename", ""):
+                continue
+            ps = form.get(f"module_ps_{idx}")
+            if ps is not None and not getattr(ps, "filename", ""):
+                ps = None
+            label = str(form.get(f"mod_label_{idx}", "") or "")
+            try:
+                await run_in_threadpool(report_service.add_module,
+                                        report.upload_id, wb, label, pysam=ps)
+            except Exception as exc:  # noqa: BLE001 - one bad module must not
+                # lose the whole upload; warn and keep the modules that worked.
+                report.warnings.append(f"{wb.filename}: {exc}")
         prefill = report_service.prefill_project(report.upload_id)
         _apply_project_defaults(prefill, proj_rec)
         revisions = db.scalars(select(Revision)

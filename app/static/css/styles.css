@@ -463,6 +463,26 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 }
 .tab-active b { background: var(--crimson); color: #fff; }
 .tab .tab-note { font-size: 11px; color: var(--muted); font-weight: 400; }
+/* ── New-analysis: repeatable module rows ────────────── */
+.mod-row {
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-2); padding: 12px 14px; margin-bottom: 10px;
+}
+.mod-row-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; margin-bottom: 8px;
+}
+.mod-row-fields {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;
+}
+.mod-f { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+.mod-f input { margin-top: 4px; }
+.mod-f input[type="text"] {
+  width: 100%; padding: 8px 10px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 13px;
+}
+.mod-f input[type="file"] { font-size: 12px; padding: 8px; }
+
 .tab-panel-empty {
   border: 1px dashed var(--line); border-radius: var(--radius);
   padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px;

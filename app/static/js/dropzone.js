@@ -144,4 +144,51 @@
       if (picker) picker.click();
     }
   });
+
+  /* ── New-analysis page: repeatable module rows ──────────────────────────
+   * Row 1 uses the original field names (workbook / pysam) so the upload route
+   * keeps its typed signature. Rows 2+ are module_wb_N / module_ps_N /
+   * module_label_N and are read out of the raw form server-side. Extra rows are
+   * NOT `required` — an empty row is skipped rather than blocking the submit.
+   */
+  var nextRow = 2;
+
+  function renumber() {
+    var rows = document.querySelectorAll("#module-rows .mod-row");
+    rows.forEach(function (row, i) {
+      var head = row.querySelector(".mod-row-head b");
+      if (head) head.textContent = "Module " + (i + 1);
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest && e.target.closest("#add-module-row")) {
+      var host = document.getElementById("module-rows");
+      if (!host) return;
+      var n = nextRow++;
+      var row = document.createElement("div");
+      row.className = "mod-row";
+      row.setAttribute("data-mod-row", String(n));
+      row.innerHTML =
+        '<div class="mod-row-head"><b>Module ' + n + '</b>' +
+        '<button type="button" class="btn-remove" data-remove-mod-row title="Remove this module">&times;</button></div>' +
+        '<div class="mod-row-fields">' +
+        '<label class="mod-f">Workbook <input type="file" name="module_wb_' + n + '" accept=".xlsx,.xlsm"></label>' +
+        '<label class="mod-f">pysam JSON <span class="opt">(optional)</span>' +
+        '<input type="file" name="module_ps_' + n + '" accept=".json"></label>' +
+        '<label class="mod-f">Label <span class="opt">(optional)</span>' +
+        '<input type="text" name="mod_label_' + n + '" placeholder="e.g. 615 W Module"></label>' +
+        "</div>";
+      host.appendChild(row);
+      renumber();
+      var f = row.querySelector('input[type="file"]');
+      if (f) f.focus();
+      return;
+    }
+    var rm = e.target.closest && e.target.closest("[data-remove-mod-row]");
+    if (rm) {
+      var r = rm.closest(".mod-row");
+      if (r) { r.remove(); renumber(); }
+    }
+  });
 })();
