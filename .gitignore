@@ -7,3 +7,6 @@ data/
 deploy/config.env
 *.egg-info/
 .pytest_cache/
+
+# Local dev launch config (machine-specific scratchpad paths)
+.claude/
