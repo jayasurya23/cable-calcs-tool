@@ -20,7 +20,8 @@
         hx-target="#rename-status" hx-swap="innerHTML"
         style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
     <label style="margin:0;font-size:13px;color:var(--muted)">Analysis name
-      <input name="name" value="{{ analysis.name }}" style="min-width:260px;margin-left:8px">
+      <input class="auth-input" name="name" value="{{ analysis.name }}"
+             style="min-width:260px;margin-left:8px;width:auto;display:inline-block">
     </label>
     <button class="btn btn-sm btn-secondary" type="submit">Rename</button>
     <span id="rename-status" class="dims"></span>

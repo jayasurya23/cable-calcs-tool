@@ -3,7 +3,8 @@
 <form id="report-form" class="report-form"
       hx-post="/sam/report/{{ upload_id }}/generate"
       hx-target="#report-preview" hx-swap="innerHTML"
-      hx-encoding="multipart/form-data" hx-indicator="#gen-spin">
+      hx-encoding="multipart/form-data" hx-indicator="#gen-spin"
+      hx-sync="this:drop" hx-disabled-elt="find button[type=submit]">
 
   <h3>Report details</h3>
   <div class="form-grid">
@@ -72,9 +73,11 @@
   {% endif %}
 
   <div class="actions">
-    <button type="submit" class="btn btn-primary">Preview report</button>
+    <button type="submit" class="btn btn-primary btn-lg">Generate report</button>
     <span id="gen-spin" class="htmx-indicator spinner">Generating report… (a few seconds)</span>
+    <span class="hint">Files revision <b>R{{ next_rev if next_rev is defined else 0 }}</b>
+      and opens the preview.</span>
   </div>
 </form>
-
-<div id="report-preview" class="report-preview"></div>
+{# The preview target (#report-preview) lives in the "Preview & download" tab
+   panel in _report.html — HTMX swaps into it and tabs.js switches to it. #}

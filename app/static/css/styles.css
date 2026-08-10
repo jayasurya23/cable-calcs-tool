@@ -34,6 +34,11 @@ body {
   line-height: 1.5;
 }
 
+/* Form controls do NOT inherit font-family from an ancestor — the UA stylesheet
+   hard-sets them to Arial. Without this, every button/input/select on the site
+   renders in the browser default face instead of Jost. */
+button, input, select, textarea, optgroup { font-family: inherit; }
+
 a { color: inherit; text-decoration: none; }
 
 /* ── Top bar ─────────────────────────────────────────── */
@@ -135,13 +140,21 @@ input[type="file"] {
 }
 .actions { display: flex; align-items: center; gap: 16px; }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: none;
   border-radius: 8px;
   padding: 10px 20px;
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
   cursor: pointer;
 }
+.btn:disabled, .htmx-request .btn[disabled] { opacity: .55; cursor: not-allowed; }
+.preview-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .btn-primary { background: var(--crimson); color: #fff; }
 .btn-primary:hover { background: var(--crimson-dim); }
 
@@ -233,6 +246,7 @@ input[type="file"] {
 
 .sheet { margin: 12px 0; }
 .sheet summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.dims { color: var(--muted); font-weight: 400; font-size: 13px; }
 .sheet .dims { color: var(--muted); font-weight: 400; font-size: 13px; }
 
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
@@ -425,6 +439,34 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 }
 .step-active { border-color: var(--crimson); color: var(--text); }
 .step-active b { background: var(--crimson); color: #fff; }
+
+/* ── Analysis tabs ───────────────────────────────────── */
+.tabbar {
+  display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 18px;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; background: transparent; border: 0;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  color: var(--muted); font-size: 14px; font-family: inherit;
+  cursor: pointer; border-radius: 6px 6px 0 0;
+}
+.tab:hover:not(:disabled) { color: var(--text); background: var(--panel); }
+.tab:focus-visible { outline: 2px solid var(--crimson); outline-offset: -2px; }
+.tab:disabled { opacity: .45; cursor: not-allowed; }
+.tab-active { color: var(--text); border-bottom-color: var(--crimson); font-weight: 600; }
+.tab b {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 700;
+}
+.tab-active b { background: var(--crimson); color: #fff; }
+.tab .tab-note { font-size: 11px; color: var(--muted); font-weight: 400; }
+.tab-panel-empty {
+  border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px;
+}
 
 /* ── Mental-model explainer ──────────────────────────── */
 .model-explainer {

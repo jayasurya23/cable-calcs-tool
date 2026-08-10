@@ -25,6 +25,7 @@ from app.core.models import Analysis, Project, User
 from . import converter, docx_fill, parser, report_builder
 from .excel_writer import TABLE_COLUMNS
 from .report_models import ReportModule, ReportProject
+from . import service as service_mod
 from .service import UPLOAD_META_FILE, _build_table, _upload_dir
 
 MODULES_FILE = "modules.json"
@@ -293,8 +294,7 @@ def add_module(upload_id: str, upload: UploadFile, label: str,
     mod_dir.mkdir(exist_ok=True)
     safe = Path(upload.filename or "module.xlsx").name
     rel = f"modules/{uuid.uuid4().hex[:8]}_{safe}"
-    with open(dest_dir / rel, "wb") as out:
-        shutil.copyfileobj(upload.file, out)
+    service_mod.copy_limited(upload.file, dest_dir / rel, what="workbook")
 
     runs, _ = parser.extract_runs(dest_dir / rel)
     if not runs:
@@ -309,8 +309,7 @@ def add_module(upload_id: str, upload: UploadFile, label: str,
     if pysam is not None and getattr(pysam, "filename", ""):
         psafe = Path(pysam.filename).name
         prel = f"modules/{uuid.uuid4().hex[:8]}_{psafe}"
-        with open(dest_dir / prel, "wb") as out:
-            shutil.copyfileobj(pysam.file, out)
+        service_mod.copy_limited(pysam.file, dest_dir / prel, what="pysam JSON")
         entry["pysam"] = prel
         try:
             wattage = report_builder.prefill_from_pysam(
@@ -371,8 +370,7 @@ def add_datasheet(upload_id: str, upload: UploadFile) -> list[dict]:
     ds_dir = dest_dir / "datasheets"
     ds_dir.mkdir(exist_ok=True)
     rel = f"datasheets/{uuid.uuid4().hex[:8]}_{safe}"
-    with open(dest_dir / rel, "wb") as out:
-        shutil.copyfileobj(upload.file, out)
+    service_mod.copy_limited(upload.file, dest_dir / rel, what="datasheet")
 
     pages = converter.validate_pdf(dest_dir / rel)
     if pages is None:

@@ -26,9 +26,10 @@
 <form class="upload-form"
       hx-post="/sam/upload"
       hx-target="#report"
-      hx-swap="innerHTML"
+      hx-swap="innerHTML show:#report:top"
       hx-encoding="multipart/form-data"
-      hx-indicator="#spinner">
+      hx-indicator="#spinner"
+      hx-sync="this:drop" hx-disabled-elt="find button[type=submit]">
   <input type="hidden" name="project_id" value="{{ project_rec.id }}">
 
   <div class="field">

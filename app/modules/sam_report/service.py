@@ -69,15 +69,63 @@ _RESERVED_NAMES = {"upload_meta.json", "modules.json", "equipment_overrides.json
                    "form.json", "sam report.docx", "sam report.pdf"}
 
 
+def copy_limited(src, dest: Path, what: str = "file") -> None:
+    """Stream an upload to `dest`, refusing anything over settings.max_upload_bytes.
+
+    Copied in chunks with a running total so an oversized (or malicious) upload is
+    rejected as it arrives rather than after it has filled the disk. The partial
+    file is removed on refusal. Raises ValueError with a user-facing message.
+    """
+    limit = settings.max_upload_bytes
+    total = 0
+    try:
+        with open(dest, "wb") as out:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > limit:
+                    raise ValueError(
+                        f"That {what} is larger than the "
+                        f"{round(limit / (1024 * 1024))} MB upload limit.")
+                out.write(chunk)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
+
+
 def _stage_upload(upload: UploadFile, dest_dir: Path) -> Path:
     """Persist an UploadFile to disk, returning its path."""
     safe_name = Path(upload.filename or "upload").name
     if safe_name.lower() in _RESERVED_NAMES:
         safe_name = f"src_{safe_name}"
     dest = dest_dir / safe_name
-    with open(dest, "wb") as out:
-        shutil.copyfileobj(upload.file, out)
+    copy_limited(upload.file, dest, what="file")
     return dest
+
+
+def friendly_upload_error(exc: Exception) -> str:
+    """Plain-English version of the common upload failures.
+
+    openpyxl raises "File is not a zip file" for anything that isn't a real
+    .xlsx (a PDF or CSV renamed, a Numbers export, a corrupt download) — which
+    means nothing to an engineer. Pass through our own ValueErrors unchanged;
+    they are already written for the user.
+    """
+    msg = str(exc)
+    if isinstance(exc, ValueError):
+        return msg
+    low = msg.lower()
+    if "not a zip file" in low or "badzipfile" in low:
+        return ("That file isn't a readable .xlsx workbook. It may be a PDF or CSV "
+                "renamed to .xlsx, or an incomplete download — re-export the SAM "
+                "runs workbook from SAM and try again.")
+    if "no such file" in low or "cannot find" in low:
+        return "That file could not be read — please try uploading it again."
+    if "permission" in low:
+        return "That file is locked (is it open in Excel?). Close it and try again."
+    return msg
 
 
 def _build_table(runs: list[SamRun]) -> list[ReportTableRow]:

@@ -7,8 +7,21 @@
   <link rel="stylesheet" href="/static/css/styles.css" />
   <!-- HTMX vendored locally (no CDN dependency — works offline / on any network). -->
   <script src="/static/js/htmx.min.js"></script>
+  <script>
+    // htmx 2 defaults to swap:false for 4xx/5xx, which silently DISCARDS every
+    // error fragment the app renders (bad workbook, failed generation, …) — the
+    // user just sees nothing happen. Our 4xx/5xx bodies are rendered UI states
+    // (_error.html), so swap them in like any other response.
+    htmx.config.responseHandling = [
+      { code: "204", swap: false },
+      { code: "[23]..", swap: true },
+      { code: "[45]..", swap: true, error: true },
+    ];
+  </script>
   <!-- Drag-and-drop for the Add-module control (delegated; survives HTMX swaps). -->
   <script src="/static/js/dropzone.js" defer></script>
+  <!-- Tabbed analysis page (delegated; survives HTMX swaps). -->
+  <script src="/static/js/tabs.js" defer></script>
 </head>
 <body>
   <header class="topbar">

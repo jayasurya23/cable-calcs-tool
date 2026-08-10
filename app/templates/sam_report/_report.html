@@ -1,22 +1,9 @@
-{# Report fragment — returned from POST /sam/upload and swapped into #report. #}
-<div class="report">
-  <div class="report-head">
-    <h2>Report</h2>
-    <div class="meta">
-      <span>Workbook: <strong>{{ report.source_workbook }}</strong></span>
-      {% if report.source_pysam %}
-        <span>pysam: <strong>{{ report.source_pysam }}</strong></span>
-      {% endif %}
-      <span>Upload ID: <code>{{ report.upload_id }}</code></span>
-      <span>Engines:
-        {% if report.engines_available %}
-          <span class="pill pill-ok">loaded</span>
-        {% else %}
-          <span class="pill pill-warn">not loaded</span>
-        {% endif %}
-      </span>
-    </div>
-  </div>
+{# Report fragment — returned from POST /sam/upload and swapped into #report.
+   Organised as tabs (see /static/js/tabs.js): Results · Report details ·
+   Preview & download · Workbook data. Panels are hidden with the `hidden`
+   attribute (never removed), so the single <form> in "Report details" still
+   submits every field regardless of which tab is showing. #}
+<div class="report js-tabs" data-active-tab="results">
 
   {% if report.warnings %}
   <div class="warnings">
@@ -26,94 +13,138 @@
   </div>
   {% endif %}
 
-  {% if report.equipment and report.equipment.has_content %}
-  {% set eq = report.equipment %}
-  {# Display-only: the SAM-derived equipment. Product names are edited on the
-     report form (Module / Inverter model fields), which is the single source. #}
-  <h3>Equipment <span class="dims">(from pysam JSON)</span></h3>
-  <div class="equip-grid">
-    <div class="equip-card">
-      <div class="equip-label">Module</div>
-      <div class="equip-value">{{ eq.module_model or eq.module_model_type or "—" }}</div>
-      {% if eq.module_model and eq.module_model_type %}<div class="equip-sub">{{ eq.module_model_type }}</div>{% endif %}
-      {% if eq.module_specs %}
-      <div class="spec-chips">
-        {% for k, v in eq.module_specs.items() %}<span class="chip"><b>{{ k }}</b> {{ v }}</span>{% endfor %}
-      </div>{% endif %}
-    </div>
-    <div class="equip-card">
-      <div class="equip-label">Inverter</div>
-      <div class="equip-value">{{ eq.inverter_model or eq.inverter_model_type or "—" }}</div>
-      {% if eq.inverter_model and eq.inverter_model_type %}<div class="equip-sub">{{ eq.inverter_model_type }}</div>{% endif %}
-      {% if eq.inverter_specs %}
-      <div class="spec-chips">
-        {% for k, v in eq.inverter_specs.items() %}<span class="chip"><b>{{ k }}</b> {{ v }}</span>{% endfor %}
-      </div>{% endif %}
-    </div>
-  </div>
-  {% for n in eq.notes %}<p class="hint">ℹ {{ n }} Set the product names on the report form below.</p>{% endfor %}
-  {% endif %}
-
-  {% if report.table_columns %}
-  <div class="section-head">
-    <h3>Output table <span class="dims">({{ report.runs | length }} runs,
-      {{ report.runs[0].year }}–{{ report.runs[-1].year }})</span></h3>
-    {% if report.output_filename %}
-    <a class="btn btn-primary btn-download"
-       href="/sam/download/{{ report.upload_id }}/{{ report.output_filename | urlencode }}"
-       download>⬇ Download workbook with Output sheet</a>
+  <div class="tabbar" role="tablist" aria-label="Analysis sections">
+    <button type="button" class="tab tab-active" role="tab" aria-selected="true"
+            data-tab-target="results"><b>1</b> Results</button>
+    {% if report.runs %}
+    <button type="button" class="tab" role="tab" aria-selected="false" tabindex="-1"
+            data-tab-target="details"><b>2</b> Report details</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" tabindex="-1"
+            data-tab-target="preview"><b>3</b> Preview &amp; download</button>
     {% endif %}
+    <button type="button" class="tab" role="tab" aria-selected="false" tabindex="-1"
+            data-tab-target="data">Workbook data</button>
   </div>
-  <div class="table-wrap table-output">
-    <table class="data-table">
-      <thead>
-        <tr>{% for c in report.table_columns %}<th>{{ c }}</th>{% endfor %}</tr>
-      </thead>
-      <tbody>
-        {% for row in report.table_rows %}
-        <tr {% if row.cells.get(report.table_columns[0]) == "Maximum" %}class="row-max"{% endif %}>
-          {% for c in report.table_columns %}<td>{{ row.cells.get(c, "") }}</td>{% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
 
-  {% if report.runs %}
-  <div class="report-generate" id="report-generate">
-    <button type="button" class="btn btn-primary btn-lg"
-            onclick="var b=document.getElementById('report-builder'); b.hidden=false;
-                     this.closest('#report-generate').style.display='none';
-                     b.scrollIntoView({behavior:'smooth', block:'start'});">Generate report</button>
-    <span class="hint">Fill the report details below → full preview → PDF / Word.</span>
-  </div>
-  {# Form is rendered inline (hidden) during Analyze so it reveals instantly. #}
-  <div id="report-builder" hidden>
-    {% include "sam_report/_report_form.html" %}
-  </div>
-  {% endif %}
-
-  <h3>Workbook contents</h3>
-  <p class="hint">Raw preview of every sheet (first rows).</p>
-
-  {% for sheet in report.sheets %}
-  <details class="sheet" {% if loop.first %}open{% endif %}>
-    <summary>{{ sheet.name }} <span class="dims">({{ sheet.n_rows }} rows × {{ sheet.n_cols }} cols)</span></summary>
-    <div class="table-wrap">
-      <table class="data-table">
-        {% if sheet.header %}
-        <thead>
-          <tr>{% for h in sheet.header %}<th>{{ h }}</th>{% endfor %}</tr>
-        </thead>
+  {# ── 1. Results ─────────────────────────────────────────────────────── #}
+  <div data-tab-panel="results" role="tabpanel">
+    <div class="report-head">
+      <div class="meta">
+        <span>Workbook: <strong>{{ report.source_workbook }}</strong></span>
+        {% if report.source_pysam %}
+          <span>pysam: <strong>{{ report.source_pysam }}</strong></span>
+        {% else %}
+          <span class="dims">No pysam JSON — project info won’t auto-fill</span>
         {% endif %}
+      </div>
+    </div>
+
+    {% if report.equipment and report.equipment.has_content %}
+    {% set eq = report.equipment %}
+    {# Display-only: the SAM-derived equipment. Product names are edited on the
+       report form (Module / Inverter model fields), which is the single source. #}
+    <h3>Equipment <span class="dims">(from pysam JSON)</span></h3>
+    <div class="equip-grid">
+      <div class="equip-card">
+        <div class="equip-label">Module</div>
+        <div class="equip-value">{{ eq.module_model or eq.module_model_type or "—" }}</div>
+        {% if eq.module_model and eq.module_model_type %}<div class="equip-sub">{{ eq.module_model_type }}</div>{% endif %}
+        {% if eq.module_specs %}
+        <div class="spec-chips">
+          {% for k, v in eq.module_specs.items() %}<span class="chip"><b>{{ k }}</b> {{ v }}</span>{% endfor %}
+        </div>{% endif %}
+      </div>
+      <div class="equip-card">
+        <div class="equip-label">Inverter</div>
+        <div class="equip-value">{{ eq.inverter_model or eq.inverter_model_type or "—" }}</div>
+        {% if eq.inverter_model and eq.inverter_model_type %}<div class="equip-sub">{{ eq.inverter_model_type }}</div>{% endif %}
+        {% if eq.inverter_specs %}
+        <div class="spec-chips">
+          {% for k, v in eq.inverter_specs.items() %}<span class="chip"><b>{{ k }}</b> {{ v }}</span>{% endfor %}
+        </div>{% endif %}
+      </div>
+    </div>
+    {% for n in eq.notes %}<p class="hint">ℹ {{ n }} Set the product names under <b>Report details</b>.</p>{% endfor %}
+    {% endif %}
+
+    {% if report.table_columns %}
+    <div class="section-head">
+      <h3>Output table <span class="dims">({{ report.runs | length }} runs,
+        {{ report.runs[0].year }}–{{ report.runs[-1].year }})</span></h3>
+      {% if report.output_filename %}
+      <a class="btn btn-secondary btn-download"
+         href="/sam/download/{{ report.upload_id }}/{{ report.output_filename | urlencode }}"
+         download>⬇ Workbook with Output sheet</a>
+      {% endif %}
+    </div>
+    <div class="table-wrap table-output">
+      <table class="data-table">
+        <thead>
+          <tr>{% for c in report.table_columns %}<th>{{ c }}</th>{% endfor %}</tr>
+        </thead>
         <tbody>
-          {% for r in sheet.sample_rows %}
-          <tr>{% for cell in r %}<td>{{ cell }}</td>{% endfor %}</tr>
+          {% for row in report.table_rows %}
+          <tr {% if row.cells.get(report.table_columns[0]) == "Maximum" %}class="row-max"{% endif %}>
+            {% for c in report.table_columns %}<td>{{ row.cells.get(c, "") }}</td>{% endfor %}
+          </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </details>
-  {% endfor %}
+    {% endif %}
+
+    {% if report.runs %}
+    <div class="actions" style="margin-top:18px">
+      <button type="button" class="btn btn-primary btn-lg"
+              data-tab-target="details">Next: report details →</button>
+      <span class="hint">Fill in the cover sheet and inputs, then preview the PDF.</span>
+    </div>
+    {% else %}
+    <div class="warning" style="margin-top:16px">⚠ No SAM runs were found in this
+      workbook, so a report can’t be generated from it. Check that it’s a SAM
+      parametric-runs export (with open-circuit / short-circuit sheets).</div>
+    {% endif %}
+  </div>
+
+  {# ── 2. Report details (the form) ───────────────────────────────────── #}
+  {% if report.runs %}
+  <div data-tab-panel="details" role="tabpanel" hidden>
+    {% include "sam_report/_report_form.html" %}
+  </div>
+
+  {# ── 3. Preview & download ──────────────────────────────────────────── #}
+  <div data-tab-panel="preview" role="tabpanel" hidden>
+    <div id="report-preview" class="report-preview">
+      <div class="tab-panel-empty">
+        No preview yet — fill in <b>Report details</b> and press
+        <b>Generate report</b>. The PDF appears here.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── 4. Workbook data (raw sheets) ──────────────────────────────────── #}
+  <div data-tab-panel="data" role="tabpanel" hidden>
+    <h3>Workbook contents</h3>
+    <p class="hint">Raw preview of every sheet in the uploaded workbook (first rows).</p>
+    {% for sheet in report.sheets %}
+    <details class="sheet" {% if loop.first %}open{% endif %}>
+      <summary>{{ sheet.name }} <span class="dims">({{ sheet.n_rows }} rows × {{ sheet.n_cols }} cols)</span></summary>
+      <div class="table-wrap">
+        <table class="data-table">
+          {% if sheet.header %}
+          <thead>
+            <tr>{% for h in sheet.header %}<th>{{ h }}</th>{% endfor %}</tr>
+          </thead>
+          {% endif %}
+          <tbody>
+            {% for r in sheet.sample_rows %}
+            <tr>{% for cell in r %}<td>{{ cell }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
 </div>

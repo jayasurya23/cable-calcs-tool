@@ -116,12 +116,16 @@ async def upload(
             {"message": "No project selected — open the analysis from a project page."},
             status_code=400)
     try:
-        report = service.process_upload(workbook, pysam, project_id=proj_rec.id)
+        # Parsing a real SAM workbook takes ~10-20 s. This handler is async, so
+        # doing it inline would block the event loop and freeze every other user's
+        # request for the duration — push it to the threadpool.
+        report = await run_in_threadpool(
+            service.process_upload, workbook, pysam, project_id=proj_rec.id)
     except Exception as exc:  # noqa: BLE001 - surface any parse failure to the user
         return templates.TemplateResponse(
             request,
             "sam_report/_error.html",
-            {"message": str(exc)},
+            {"message": service.friendly_upload_error(exc)},
             status_code=400,
         )
     ctx = {"report": report, "upload_id": report.upload_id, "project_rec": proj_rec}
@@ -134,7 +138,8 @@ async def upload(
                                .where(Revision.analysis_id == analysis.id)
                                .order_by(Revision.rev_number)).all()
         next_rev = storage.next_rev_number(db, analysis)
-        previews, stats = report_service.modules_preview(report.upload_id)
+        previews, stats = await run_in_threadpool(
+            report_service.modules_preview, report.upload_id)
         ctx.update(project=prefill, analysis=analysis,
                    modules=report_service.load_modules(report.upload_id),
                    datasheets=report_service.load_datasheets(report.upload_id),
@@ -170,13 +175,14 @@ async def add_module(request: Request, upload_id: str):
     label = str(form.get("new_module_label", "") or "")
     if upload is not None and getattr(upload, "filename", ""):
         try:
-            report_service.add_module(upload_id, upload, label, pysam=pysam)
+            await run_in_threadpool(
+                report_service.add_module, upload_id, upload, label, pysam=pysam)
         except ValueError as exc:
             error = str(exc)
     else:
         error = "Choose a workbook to add as a module."
 
-    previews, stats = report_service.modules_preview(upload_id)
+    previews, stats = await run_in_threadpool(report_service.modules_preview, upload_id)
     return templates.TemplateResponse(
         request, "sam_report/_report_form_modules.html",
         {
@@ -195,8 +201,8 @@ async def remove_module(request: Request, upload_id: str, index: int):
     _require_upload(upload_id)
     form = await request.form()
     report_service.save_labels(upload_id, _labels_from_form(form))
-    report_service.remove_module(upload_id, index)
-    previews, stats = report_service.modules_preview(upload_id)
+    await run_in_threadpool(report_service.remove_module, upload_id, index)
+    previews, stats = await run_in_threadpool(report_service.modules_preview, upload_id)
     return templates.TemplateResponse(
         request, "sam_report/_report_form_modules.html",
         {
@@ -222,7 +228,7 @@ async def add_datasheet(request: Request, upload_id: str):
     added = 0
     for upload in uploads:
         try:
-            report_service.add_datasheet(upload_id, upload)
+            await run_in_threadpool(report_service.add_datasheet, upload_id, upload)
             added += 1
         except ValueError as exc:
             error = str(exc)
