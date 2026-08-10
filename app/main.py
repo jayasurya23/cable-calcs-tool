@@ -19,6 +19,14 @@ from app.shared.engine import ENGINES_AVAILABLE, ENGINE_IMPORT_ERROR
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    # Keep the CEC module database current: on startup, if the cached copy is
+    # missing or older than a week, pull the latest from NREL's SAM library in the
+    # background (also happens on report generation). No manual CSV upload needed.
+    try:
+        from app.modules.sam_report import cec_db
+        cec_db.maybe_refresh_async()
+    except Exception:  # noqa: BLE001 - never block startup on the refresh
+        pass
     yield
 
 
