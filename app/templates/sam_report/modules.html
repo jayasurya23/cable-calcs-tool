@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Module library — Cable Web{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a href="/projects">Projects</a><span class="sep">&rsaquo;</span>
+  <span class="crumb-current">Module library</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>Module library</h1>
+  <p class="subtitle">The CEC module database used to name modules in reports as
+    <b>Manufacturer — Model</b>, matched from each module’s pysam JSON.</p>
+</section>
+
+{% if msg %}<div class="notice-ok">✓ {{ msg }}</div>{% endif %}
+{% if error %}<div class="warning">⚠ {{ error }}</div>{% endif %}
+
+<div class="derived-stats">
+  <span class="chip"><b>Modules</b> {{ "{:,}".format(stats.module_count) }}</span>
+  <span class="chip"><b>Source</b> {{ stats.source }}</span>
+  <span class="chip"><b>Cache age</b>
+    {% if stats.cache_age_days is not none %}{{ stats.cache_age_days }} d{% else %}bundled{% endif %}</span>
+  <span class="chip"><b>Custom</b> {{ stats.custom_count }}</span>
+</div>
+
+<div style="margin:14px 0">
+  <form method="post" action="/sam/modules/refresh" style="display:inline">
+    <button class="btn btn-secondary btn-sm" type="submit">↻ Refresh from NREL now</button>
+  </form>
+  <span class="hint" style="margin-left:8px">Auto-updates from NREL’s SAM library in the background when older than 7 days.</span>
+</div>
+
+<h3>Add a custom module</h3>
+<p class="hint">For a module not yet in the CEC database. Upload its pysam JSON (so the tool can
+  match it by parameters), and enter the name to show. Custom modules take precedence over the DB.</p>
+<form method="post" action="/sam/modules/add" enctype="multipart/form-data"
+      class="form-grid" style="align-items:end;max-width:720px">
+  <label>Manufacturer<input name="manufacturer" placeholder="e.g. Canadian Solar"></label>
+  <label>Model<input name="model" placeholder="e.g. CS7N-660MS" required></label>
+  <label>pysam JSON<input type="file" name="pysam" accept=".json" required></label>
+  <button class="btn btn-primary btn-sm" type="submit" style="margin-bottom:2px">+ Add module</button>
+</form>
+
+{% if custom %}
+<h3 style="margin-top:22px">Custom modules</h3>
+<div class="module-rows">
+  {% for c in custom %}
+  <div class="module-row">
+    <span class="module-idx">{{ loop.index }}</span>
+    <span class="module-file">📄 {{ c.display }}</span>
+    <form method="post" action="/sam/modules/remove/{{ loop.index0 }}" style="margin-left:auto">
+      <button class="btn-remove" title="Remove custom module" type="submit">&times;</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

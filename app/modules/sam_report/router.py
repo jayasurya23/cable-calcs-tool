@@ -13,11 +13,11 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.core.db import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_admin
 from app.core.models import Analysis, Project, Revision, User
 from app.core.templating import templates
 from app.modules.projects import storage
-from . import report_service, service
+from . import cec_db, report_service, service
 from .report_models import ReportProject
 
 router = APIRouter(prefix="/sam", tags=["sam-report"])
@@ -486,6 +486,52 @@ def report_docx(upload_id: str):
         filename="SAM Report.docx",
         content_disposition_type="attachment",
     )
+
+
+# ── Module library (admin): CEC module database status, refresh, custom adds ──
+
+def _modules_ctx(msg=None, error=None):
+    return {"stats": cec_db.stats(), "custom": cec_db.custom_modules(),
+            "msg": msg, "error": error}
+
+
+@router.get("/modules", response_class=HTMLResponse)
+def module_library(request: Request, admin: User = Depends(require_admin)):
+    """The CEC module library: DB status, refresh, and custom module adds."""
+    return templates.TemplateResponse(request, "sam_report/modules.html", _modules_ctx())
+
+
+@router.post("/modules/refresh", response_class=HTMLResponse)
+async def module_refresh(request: Request, admin: User = Depends(require_admin)):
+    ok, msg = await run_in_threadpool(cec_db.refresh_from_nrel)
+    return templates.TemplateResponse(
+        request, "sam_report/modules.html",
+        _modules_ctx(msg=(msg if ok else None), error=(None if ok else msg)))
+
+
+@router.post("/modules/add", response_class=HTMLResponse)
+async def module_add(request: Request,
+                     manufacturer: str = Form(""), model: str = Form(""),
+                     pysam: UploadFile = File(...),
+                     admin: User = Depends(require_admin)):
+    msg = error = None
+    try:
+        data = json.loads((await pysam.read()).decode("utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("That isn’t a pysam inputs JSON.")
+        disp = cec_db.add_custom_module(manufacturer, model, data)
+        msg = f"Added “{disp}”. Reports whose module matches it will use this name."
+    except ValueError as exc:
+        error = str(exc)
+    except Exception as exc:  # noqa: BLE001 - bad JSON etc.
+        error = f"Couldn’t read that pysam JSON: {exc}"
+    return templates.TemplateResponse(request, "sam_report/modules.html", _modules_ctx(msg, error))
+
+
+@router.post("/modules/remove/{index}", response_class=HTMLResponse)
+def module_remove(request: Request, index: int, admin: User = Depends(require_admin)):
+    cec_db.remove_custom_module(index)
+    return templates.TemplateResponse(request, "sam_report/modules.html", _modules_ctx())
 
 
 @router.get("/download/{upload_id}/{filename}")

@@ -71,31 +71,29 @@ def _per_module_tokens(ctx: ReportContext) -> dict[str, str]:
     with a dash where a module has no pysam to derive System Size / DC-AC from."""
     p = ctx.project
     mods = ctx.modules
+    # System Size (DC) and DC/AC ratio stay single project-level values — for
+    # multi-module reports the DC/AC row is dropped entirely (fill_docx) and the
+    # System Size shows one value (the reference design). Only the module
+    # model / datasheet list is rendered per module.
+    tokens = {
+        "«SYSTEM_SIZE»": _esc(p.system_size_dc),
+        "«DC_AC_RATIO»": _esc(p.dc_ac_ratio),
+    }
     if len(mods) <= 1:
-        return {
-            "«MODULE_MODEL»": _esc(p.module_model),      # Project-Info cell
-            "«MODULE_DATASHEET»": _esc(p.module_model),  # Inputs "Module Datasheet:" line
-            "«SYSTEM_SIZE»": _esc(p.system_size_dc),
-            "«DC_AC_RATIO»": _esc(p.dc_ac_ratio),
-        }
-
-    def _lines(value_of):
-        return _BR.join(_esc(f"{m.label}: {value_of(m) or '—'}") for m in mods)
+        tokens["«MODULE_MODEL»"] = _esc(p.module_model)       # Project-Info cell
+        tokens["«MODULE_DATASHEET»"] = _esc(p.module_model)   # Inputs line
+        return tokens
 
     # Prefer each module's real "Manufacturer — Model" (matched from its pysam);
     # fall back to the engineer's label when there's no pysam/match.
     def _name(m):
         return m.module_model or m.label
 
-    return {
-        # Project-Info cell (centered): one module per line.
-        "«MODULE_MODEL»": _BR.join(_esc(_name(m)) for m in mods),
-        # Inputs line is justified — a per-line break there gets stretched, so keep
-        # the datasheet list on one comma-separated line.
-        "«MODULE_DATASHEET»": _esc(", ".join(_name(m) for m in mods)),
-        "«SYSTEM_SIZE»": _lines(lambda m: m.system_size_dc),
-        "«DC_AC_RATIO»": _lines(lambda m: m.dc_ac_ratio),
-    }
+    # Project-Info cell (centered): one module per line. Inputs line is justified —
+    # a per-line break there gets stretched — so keep it comma-separated.
+    tokens["«MODULE_MODEL»"] = _BR.join(_esc(_name(m)) for m in mods)
+    tokens["«MODULE_DATASHEET»"] = _esc(", ".join(_name(m) for m in mods))
+    return tokens
 
 
 def _tokens(ctx: ReportContext) -> dict[str, str]:
@@ -207,6 +205,21 @@ def results_table_xml(ctx: ReportContext) -> str:
     )
 
 
+def _drop_table_row(doc_xml: str, token: str) -> str:
+    """Delete the whole <w:tr> that contains `token` (used to drop the DC/AC Ratio
+    row from Project Information for multi-module reports)."""
+    i = doc_xml.find(token)
+    if i < 0:
+        return doc_xml
+    # The row opens with "<w:tr>" or "<w:tr " — NOT "<w:trPr" (a child element),
+    # so match those two forms explicitly and take the closest before the token.
+    ts = max(doc_xml.rfind("<w:tr>", 0, i), doc_xml.rfind("<w:tr ", 0, i))
+    te = doc_xml.find("</w:tr>", i)
+    if ts < 0 or te < 0:
+        return doc_xml
+    return doc_xml[:ts] + doc_xml[te + len("</w:tr>"):]
+
+
 def _replace_marker(doc_xml: str, table_xml: str) -> str:
     """Replace the whole <w:p> that holds «RESULTS_TABLE» with the generated table.
 
@@ -243,9 +256,16 @@ def fill_docx(ctx: ReportContext, template: str | None = None) -> bytes:
         for item in src.infolist():
             data = src.read(item.filename)
             if item.filename in ("word/document.xml", "word/header1.xml"):
-                text = _apply_tokens(data.decode("utf-8"), tokens)
+                text = data.decode("utf-8")
                 if item.filename == "word/document.xml":
+                    # Multi-module reports drop the DC/AC Ratio row (per the EE):
+                    # remove it before token substitution (matches the raw token).
+                    if len(ctx.modules) > 1:
+                        text = _drop_table_row(text, "«DC_AC_RATIO»")
+                    text = _apply_tokens(text, tokens)
                     text = _replace_marker(text, table_xml)
+                else:
+                    text = _apply_tokens(text, tokens)
                 data = text.encode("utf-8")
             out.writestr(item, data)
     src.close()
