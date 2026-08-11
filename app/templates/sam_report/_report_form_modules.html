@@ -22,8 +22,11 @@
                      if previews and previews|length > loop.index0 else m.pysam) %}
     {% if has_ps %}
     <span class="chip chip-ok" title="System Size / DC-AC filled from this module’s pysam">📄 pysam</span>
+    {% elif m.datasheet %}
+    <span class="chip chip-ok"
+          title="Identified from the datasheet{% if m.info_source == 'cec' %} (matched in the CEC database){% endif %} — System Size / DC-AC still need a pysam">📕 datasheet</span>
     {% else %}
-    <span class="chip chip-dim" title="No pysam — this module’s System Size / DC-AC show a dash">no pysam</span>
+    <span class="chip chip-dim" title="No pysam or datasheet — this module’s System Size / DC-AC show a dash">no pysam</span>
     {% endif %}
     {% if loop.index0 > 0 %}
     <button type="button" class="btn-remove" title="Remove module"
@@ -69,12 +72,12 @@
 <div class="module-add">
   <div class="js-dropzone dropzone" tabindex="0" role="button"
        aria-label="Add a module — drop its Excel workbook and optional pysam JSON, or click to browse">
-    <input type="file" id="mod-file-picker" accept=".xlsx,.xlsm,.json" multiple hidden>
+    <input type="file" id="mod-file-picker" accept=".xlsx,.xlsm,.json,.pdf" multiple hidden>
     <div class="dz-inner">
       <span class="dz-icon" aria-hidden="true">⬆</span>
       <span class="dz-copy">
         <span class="dz-title">Add a module — drop files here</span>
-        <span class="dz-sub">Excel <b>.xlsx</b> + optional pysam <b>.json</b> &nbsp;·&nbsp; or click to browse</span>
+        <span class="dz-sub">Excel <b>.xlsx</b> + optional pysam <b>.json</b> or datasheet <b>.pdf</b> &nbsp;·&nbsp; or click to browse</span>
       </span>
     </div>
     <div id="dz-files" class="dz-files" hidden></div>
@@ -82,7 +85,7 @@
 
   {# Hidden inputs the dropzone populates; HTMX submits them with the form. #}
   <input type="file" name="new_module_file" id="new-module-file" accept=".xlsx,.xlsm" hidden>
-  <input type="file" name="new_module_pysam" id="new-module-pysam" accept=".json" hidden>
+  <input type="file" name="new_module_pysam" id="new-module-pysam" accept=".json,.pdf" hidden>
 
   <div class="module-add-row">
     <input type="text" name="new_module_label" id="new-module-label"

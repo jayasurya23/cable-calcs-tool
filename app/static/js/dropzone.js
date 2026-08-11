@@ -176,8 +176,8 @@
         '<button type="button" class="btn-remove" data-remove-mod-row title="Remove this module">&times;</button></div>' +
         '<div class="mod-row-fields">' +
         '<label class="mod-f">Workbook <input type="file" name="module_wb_' + n + '" accept=".xlsx,.xlsm"></label>' +
-        '<label class="mod-f">pysam JSON <span class="opt">(optional)</span>' +
-        '<input type="file" name="module_ps_' + n + '" accept=".json"></label>' +
+        '<label class="mod-f">pysam JSON <span class="opt">or datasheet PDF</span>' +
+        '<input type="file" name="module_ps_' + n + '" accept=".json,.pdf"></label>' +
         '<label class="mod-f">Label <span class="opt">(optional)</span>' +
         '<input type="text" name="mod_label_' + n + '" placeholder="e.g. 615 W Module"></label>' +
         "</div>";

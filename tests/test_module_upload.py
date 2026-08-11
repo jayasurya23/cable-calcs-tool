@@ -81,3 +81,77 @@ def test_add_module_rejects_a_workbook_with_no_sam_runs(staged, tmp_path):
         report_service.add_module(token, _Upload(empty), "Empty")
 
     assert len(report_service.load_modules(token)) == 1
+
+
+# ── Datasheet PDF as an alternative to a pysam ──────────────────────────────
+
+def _datasheet_pdf(tmp_path, name, model_lines):
+    """A small text-based datasheet PDF, built the way a vendor's would read."""
+    import subprocess
+    html = tmp_path / f"{name}.html"
+    html.write_text("<html><body>" + model_lines + "</body></html>", encoding="utf-8")
+    for exe in (r"C:\Program Files\LibreOffice\program\soffice.exe", "soffice"):
+        try:
+            subprocess.run([exe, "--headless", "--convert-to", "pdf",
+                            "--outdir", str(tmp_path), str(html)],
+                           check=True, capture_output=True, timeout=120)
+            break
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+    pdf = tmp_path / f"{name}.pdf"
+    if not pdf.is_file():
+        pytest.skip("LibreOffice unavailable to build the fixture PDF")
+    return pdf
+
+
+def test_datasheet_identifies_the_module_against_the_cec_database(tmp_path):
+    from app.modules.sam_report import datasheet_parser
+    pdf = _datasheet_pdf(tmp_path, "qcells",
+                         "<h1>Qcells North America</h1><h2>Q.PRO-G3 245</h2>"
+                         "<p>Open Circuit Voltage (Voc) 37.56 V</p>"
+                         "<p>Short Circuit Current (Isc) 8.85 A</p>")
+    found = datasheet_parser.identify(pdf)
+    assert found["source"] == "cec"                 # authoritative, not guessed
+    assert "Qcells North America" in found["display"]
+    assert "245" in found["display"]
+    assert found["specs"]["voc"] == 37.56
+
+
+def test_datasheet_for_an_unknown_module_falls_back_to_its_own_text(tmp_path):
+    from app.modules.sam_report import datasheet_parser
+    pdf = _datasheet_pdf(tmp_path, "unknown",
+                         "<h1>Nonesuch Solar</h1><h2>NS-9999X-777</h2>"
+                         "<p>Maximum Power (Pmax) 777 W</p>")
+    found = datasheet_parser.identify(pdf)
+    assert found["source"] == "text"
+    assert "777" in found["display"] or found["specs"].get("pmax") == 777.0
+
+
+def test_unreadable_pdf_is_reported_rather_than_raising(tmp_path):
+    from pypdf import PdfWriter
+    from app.modules.sam_report import datasheet_parser
+    blank = tmp_path / "scan.pdf"
+    w = PdfWriter()
+    w.add_blank_page(width=612, height=792)
+    with open(blank, "wb") as fh:
+        w.write(fh)
+    assert datasheet_parser.identify(blank) is None
+
+
+def test_add_module_accepts_a_datasheet_instead_of_a_pysam(staged, sam_workbook, tmp_path):
+    """The datasheet names the module; system-design values stay empty because a
+    datasheet cannot supply them."""
+    token, _ = staged
+    pdf = _datasheet_pdf(tmp_path, "q245",
+                         "<h1>Qcells North America</h1><h2>Q.PRO-G3 245</h2>"
+                         "<p>Open Circuit Voltage (Voc) 37.56 V</p>")
+    entries = report_service.add_module(
+        token, _Upload(sam_workbook, "second.xlsx"), "", pysam=_Upload(pdf))
+    entry = entries[-1]
+    assert entry.get("datasheet") and not entry.get("pysam")
+    assert "Qcells North America" in entry["module_name"]
+    assert entry["label"] == entry["module_name"]        # auto-labelled from it
+
+    module = report_service._build_modules(token, {})[-1]
+    assert "Qcells North America" in module.module_model
+    assert module.system_size_dc == ""                   # needs a pysam

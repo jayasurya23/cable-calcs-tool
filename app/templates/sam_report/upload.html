@@ -58,8 +58,8 @@
           <label class="mod-f">Workbook <span class="req">*</span>
             <input type="file" name="workbook" accept=".xlsx,.xlsm" required />
           </label>
-          <label class="mod-f">pysam JSON <span class="opt">(optional)</span>
-            <input type="file" name="pysam" accept=".json" />
+          <label class="mod-f">pysam JSON <span class="opt">or datasheet PDF</span>
+            <input type="file" name="pysam" accept=".json,.pdf" />
           </label>
           <label class="mod-f">Label <span class="opt">(optional)</span>
             <input type="text" name="mod_label_1" placeholder="e.g. 615 W Module" />
@@ -70,8 +70,10 @@
 
     <button type="button" id="add-module-row" class="btn btn-secondary btn-sm"
             style="margin-top:10px">+ Add another module</button>
-    <small>The pysam is what fills coordinates, GCR, modules-per-string, and each
-      module’s System Size / DC-AC — and names the module from the CEC database.</small>
+    <small>A <b>pysam JSON</b> fills coordinates, GCR, modules-per-string and each
+      module’s System Size / DC-AC. No pysam? Upload the module’s <b>datasheet PDF</b>
+      instead — it identifies the module against the CEC database and names it, but
+      can’t supply the system-design values (those stay blank for you to fill in).</small>
   </div>
 
   <div class="actions">

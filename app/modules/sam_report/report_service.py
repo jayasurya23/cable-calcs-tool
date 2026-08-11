@@ -218,6 +218,8 @@ def collect_revision_files(upload_id: str) -> list[Path]:
         files.append(dest_dir / entry["path"])
         if entry.get("pysam"):
             files.append(dest_dir / entry["pysam"])
+        if entry.get("datasheet"):
+            files.append(dest_dir / entry["datasheet"])
     return [f for f in files if f.is_file()]
 
 
@@ -279,13 +281,45 @@ def save_labels(upload_id: str, labels: dict[int, str]) -> None:
         _save_modules(dest_dir, entries)
 
 
+def stage_module_info(dest_dir: Path, info: UploadFile) -> dict:
+    """Stage a module's optional info file, which may be EITHER a pysam JSON or a
+    manufacturer datasheet PDF, and return what it told us.
+
+    pysam  -> {"pysam": rel}                    full system + module parameters
+    PDF    -> {"datasheet": rel, "module_name": "Manufacturer — Model", ...}
+              identified against the CEC database where possible
+
+    A datasheet names the module and gives its nameplate specs; it CANNOT give
+    coordinates, GCR, modules-per-string, system size or DC/AC ratio, which are
+    properties of the system design rather than the module.
+    """
+    safe = Path(info.filename or "info").name
+    rel = f"modules/{uuid.uuid4().hex[:8]}_{safe}"
+    service_mod.copy_limited(info.file, dest_dir / rel, what="module info file")
+
+    if safe.lower().endswith(".pdf"):
+        from . import datasheet_parser
+        try:
+            found = datasheet_parser.identify(dest_dir / rel)
+        except Exception:  # noqa: BLE001 - a bad PDF must not lose the module
+            found = None
+        if not found or not found.get("display"):
+            return {"datasheet": rel, "module_name": "",
+                    "info_note": "The datasheet couldn’t be read (is it a scan?). "
+                                 "Enter the module name manually."}
+        return {"datasheet": rel, "module_name": found["display"],
+                "module_specs": found.get("specs") or {},
+                "info_source": found.get("source", "text")}
+    return {"pysam": rel}
+
+
 def add_module(upload_id: str, upload: UploadFile, label: str,
                pysam: UploadFile | None = None) -> list[dict]:
-    """Stage an extra module workbook (and, optionally, its own pysam JSON).
+    """Stage an extra module workbook plus its optional info file.
 
-    The pysam powers this module's Project-Information values (module model, DC
-    nameplate, DC/AC ratio) and auto-labels it by wattage. Raises ValueError if
-    the workbook isn't a SAM export.
+    `pysam` may be EITHER a pysam JSON (full system + module parameters) or a
+    manufacturer datasheet PDF (identifies the module and its nameplate specs) —
+    see stage_module_info. Raises ValueError if the workbook isn't a SAM export.
     """
     dest_dir = _upload_dir(upload_id)
     entries = load_modules(upload_id)
@@ -314,17 +348,19 @@ def add_module(upload_id: str, upload: UploadFile, label: str,
     entry: dict = {"path": rel, "name": safe}
     wattage = None
     if pysam is not None and getattr(pysam, "filename", ""):
-        psafe = Path(pysam.filename).name
-        prel = f"modules/{uuid.uuid4().hex[:8]}_{psafe}"
-        service_mod.copy_limited(pysam.file, dest_dir / prel, what="pysam JSON")
-        entry["pysam"] = prel
-        try:
-            wattage = report_builder.prefill_from_pysam(
-                parser.parse_pysam_json(dest_dir / prel)).get("module_wattage")
-        except Exception:  # noqa: BLE001 - bad pysam still leaves a usable module
-            wattage = None
+        entry.update(stage_module_info(dest_dir, pysam))
+        if entry.get("pysam"):
+            try:
+                wattage = report_builder.prefill_from_pysam(
+                    parser.parse_pysam_json(dest_dir / entry["pysam"])).get("module_wattage")
+            except Exception:  # noqa: BLE001 - bad pysam still leaves a usable module
+                wattage = None
+        elif entry.get("module_specs", {}).get("pmax"):
+            wattage = int(round(entry["module_specs"]["pmax"]))
 
-    entry["label"] = label.strip() or report_builder.default_module_label(wattage, len(entries))
+    entry["label"] = (label.strip()
+                      or entry.get("module_name")
+                      or report_builder.default_module_label(wattage, len(entries)))
     entries.append(entry)
     _save_modules(dest_dir, entries)
     return entries
@@ -469,7 +505,11 @@ def _build_modules(upload_id: str, labels: dict[int, str]) -> list[ReportModule]
         # Module 0's pysam is the upload's (meta); extra modules carry their own.
         pysam_rel = meta.get("pysam") if i == 0 else e.get("pysam")
         pysam_path = (dest_dir / pysam_rel) if pysam_rel else None
-        modules.append(report_builder.module_from_workbook(dest_dir / e["path"], label, pysam_path))
+        m = report_builder.module_from_workbook(dest_dir / e["path"], label, pysam_path)
+        # No pysam, but a datasheet identified the module -> use that name.
+        if not m.module_model and e.get("module_name"):
+            m.module_model = e["module_name"]
+        modules.append(m)
     return modules
 
 
