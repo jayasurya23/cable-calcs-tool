@@ -472,6 +472,7 @@ body.layout-wide .content { max-width: 1560px; }
 .btn-remove:hover { border-color: var(--danger); color: var(--danger); }
 .chip-ok { color: var(--ok); border-color: rgba(46,125,50,.55); }
 .chip-dim { color: var(--muted); }
+.chip-warn { color: #e6c34d; border-color: rgba(184,134,11,.55); }
 
 /* ── Add-module drag-and-drop ─────────────────────────── */
 .module-add { margin-top: 14px; }

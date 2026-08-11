@@ -307,9 +307,17 @@ def stage_module_info(dest_dir: Path, info: UploadFile) -> dict:
             return {"datasheet": rel, "module_name": "",
                     "info_note": "The datasheet couldn’t be read (is it a scan?). "
                                  "Enter the module name manually."}
-        return {"datasheet": rel, "module_name": found["display"],
-                "module_specs": found.get("specs") or {},
-                "info_source": found.get("source", "text")}
+        source = found.get("source", "text")
+        out = {"datasheet": rel, "module_name": found["display"],
+               "module_specs": found.get("specs") or {}, "info_source": source}
+        if source != "cec":
+            # Read off the sheet's own text rather than matched in the CEC
+            # database. Layouts vary enough that the NAME is a guess (the specs
+            # are reliable), so it is surfaced as unconfirmed — an engineering
+            # report must not silently carry a guessed module model.
+            out["info_note"] = ("Module name read from the datasheet text — please "
+                                "check it. Its specs were read successfully.")
+        return out
     return {"pysam": rel}
 
 

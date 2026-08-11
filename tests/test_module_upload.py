@@ -155,3 +155,21 @@ def test_add_module_accepts_a_datasheet_instead_of_a_pysam(staged, sam_workbook,
     module = report_service._build_modules(token, {})[-1]
     assert "Qcells North America" in module.module_model
     assert module.system_size_dc == ""                   # needs a pysam
+
+
+def test_prose_is_never_returned_as_a_module_name(tmp_path):
+    """Guard the regression that motivated hardening _guess_name: marketing copy
+    and revision lines were being returned as module names, and that value flows
+    into the report's Module Model field."""
+    from app.modules.sam_report import datasheet_parser
+    _, model = datasheet_parser._guess_name(
+        "Nonesuch Energy\nEngineering datasheet - Rev 3 - 2026\n"
+        "Module type: NS-660M-BF\nMaximum Power (Pmax) 660 W")
+    assert model == "NS-660M-BF"
+
+    # A sheet with no designation at all must yield nothing rather than prose.
+    mfr, model = datasheet_parser._guess_name(
+        "High-Efficiency Bifacial Module\nOutstanding low-light performance\n"
+        "25 year warranty")
+    assert model == ""
+    assert "Module" not in mfr           # never the marketing headline

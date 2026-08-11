@@ -147,21 +147,72 @@ def _scrape_specs(text: str) -> dict:
     return out
 
 
+# Words that mark a line as prose/boilerplate rather than a part designation.
+# Compared against a lower-cased line, so no reliance on regex flags.
+# NOTE: deliberately excludes brand-ish words. Manufacturers are routinely named
+# "<X> Solar" / "<X> Energy", so filtering those would reject the very line we want.
+_PROSE_WORDS = (
+    "datasheet", "data sheet", "revision", "efficiency", "warranty",
+    "voltage", "current", "power", "temperature", "www", "http",
+    "tel:", "fax", "email", "page ", "certified", "dimension", "weight",
+)
+# A part designation: letters + digits, hyphens/dots/slashes, no sentences.
+_DESIGNATION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-/ ]{2,38}$")
+_LABEL_RE = re.compile(
+    r"^(?:module\s+type|model(?:\s*(?:no\.?|number|name))?|type|"
+    r"part\s*(?:no\.?|number))\s*[:	 ]\s*(.+)$", re.IGNORECASE)
+
+
+def _is_prose(value: str) -> bool:
+    low = value.lower()
+    return any(w in low for w in _PROSE_WORDS)
+
+
+def _looks_like_model(value: str) -> bool:
+    v = value.strip()
+    if not _DESIGNATION_RE.match(v) or _is_prose(v):
+        return False
+    if not (any(c.isdigit() for c in v) and any(c.isalpha() for c in v)):
+        return False
+    return v.count(" ") <= 2          # designations aren't sentences
+
+
 def _guess_name(text: str) -> tuple[str, str]:
     """Manufacturer / model from the front matter, when CEC didn't recognise it.
 
-    Datasheets lead with the brand and the model designation, so the first few
-    non-empty lines are the best available signal. Deliberately conservative — a
-    wrong guess is worse than an empty field the engineer fills in.
+    DELIBERATELY CONSERVATIVE. Measured against realistic layouts, a naive
+    "first line is the brand, first line with a digit is the model" returned
+    confident garbage — marketing copy ("High-Efficiency N-Type Bifacial
+    Module") and revision lines ("Engineering datasheet - Rev 3 - 2026") came
+    back as module names. That value flows into the report's Module Model
+    field, so a wrong-but-confident answer is worse than none: anything that
+    doesn't clearly look like a part designation yields "" and the engineer is
+    asked to type it.
     """
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()][:12]
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()][:25]
+
     model = ""
+    # 1. An explicitly labelled row ("Module type: NS-660M-BF") is most reliable.
     for ln in lines:
-        # A model designation: has digits, is short, isn't a sentence or a spec row.
-        if (any(c.isdigit() for c in ln) and 3 <= len(ln) <= 48
-                and not re.search(r"\b(voltage|current|power|temperature|warranty|www|http|©)\b",
-                                  ln, re.IGNORECASE)):
-            model = ln
+        m = _LABEL_RE.match(ln)
+        if m and _looks_like_model(m.group(1)):
+            model = m.group(1).strip()
             break
-    mfr = lines[0] if lines and lines[0] != model and len(lines[0]) <= 48 else ""
+    # 2. Otherwise a standalone line that reads like a designation.
+    if not model:
+        for ln in lines:
+            if _looks_like_model(ln):
+                model = ln
+                break
+
+    # The manufacturer is trusted only if it's a short, prose-free lead line
+    # that isn't itself the model.
+    mfr = ""
+    for ln in lines[:4]:
+        if ln == model or len(ln) > 40:
+            continue
+        if _is_prose(ln) or _looks_like_model(ln):
+            continue
+        mfr = ln
+        break
     return mfr, model

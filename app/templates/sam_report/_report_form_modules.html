@@ -22,9 +22,12 @@
                      if previews and previews|length > loop.index0 else m.pysam) %}
     {% if has_ps %}
     <span class="chip chip-ok" title="System Size / DC-AC filled from this module’s pysam">📄 pysam</span>
-    {% elif m.datasheet %}
+    {% elif m.datasheet and m.info_source == 'cec' %}
     <span class="chip chip-ok"
-          title="Identified from the datasheet{% if m.info_source == 'cec' %} (matched in the CEC database){% endif %} — System Size / DC-AC still need a pysam">📕 datasheet</span>
+          title="Matched in the CEC database from the datasheet — System Size / DC-AC still need a pysam">📕 datasheet</span>
+    {% elif m.datasheet %}
+    <span class="chip chip-warn"
+          title="{{ m.info_note or 'Name read from the datasheet text — please check it.' }}">📕 datasheet · check name</span>
     {% else %}
     <span class="chip chip-dim" title="No pysam or datasheet — this module’s System Size / DC-AC show a dash">no pysam</span>
     {% endif %}
