@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -65,6 +66,28 @@ async def _needs_login(request: Request, exc: NeedsLogin):
 @app.exception_handler(Forbidden)
 async def _forbidden(request: Request, exc: Forbidden):
     return HTMLResponse("<h1>403 — admin access required</h1>", status_code=403)
+
+
+DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
+
+
+@app.get("/help", response_class=HTMLResponse)
+def help_page(request: Request, user: User = Depends(require_user)):
+    """The user manual, served from docs/USER_MANUAL.md so there is ONE source of
+    truth — editing the markdown updates the in-app help."""
+    src = DOCS_DIR / "USER_MANUAL.md"
+    try:
+        import markdown
+        body = markdown.markdown(
+            src.read_text(encoding="utf-8"),
+            extensions=["tables", "fenced_code", "toc", "sane_lists"])
+        return templates.TemplateResponse(request, "help.html", {"body": body})
+    except FileNotFoundError:
+        return templates.TemplateResponse(request, "help.html", {
+            "error": "The user manual isn't bundled with this build."}, status_code=404)
+    except Exception as exc:  # noqa: BLE001 - help must never 500 the app
+        return templates.TemplateResponse(request, "help.html", {
+            "error": f"The user manual could not be rendered: {exc}"}, status_code=500)
 
 
 @app.get("/health")

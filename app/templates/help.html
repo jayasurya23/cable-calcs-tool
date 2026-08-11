@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Help — Cable Web{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a href="/projects">Projects</a><span class="sep">&rsaquo;</span>
+  <span class="crumb-current">Help</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>Help</h1>
+  <p class="subtitle">How to run a SAM analysis, what each field means, and what to
+    prepare before you start.</p>
+</section>
+
+{% if error %}
+<div class="warning">⚠ {{ error }}</div>
+{% else %}
+<article class="doc">{{ body | safe }}</article>
+{% endif %}
+{% endblock %}

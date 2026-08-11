@@ -4,7 +4,12 @@
       hx-post="/sam/report/{{ upload_id }}/generate"
       hx-target="#report-preview" hx-swap="innerHTML"
       hx-encoding="multipart/form-data" hx-indicator="#gen-spin"
-      hx-sync="this:drop" hx-disabled-elt="find button[type=submit]">
+      hx-sync="this:drop" hx-disabled-elt="find button[type=submit]"
+      {% if analysis is defined and analysis %}data-draft-url="/sam/analysis/{{ analysis.id }}/draft"{% endif %}>
+
+  {# Lets the server detect that someone else filed a revision while this
+     form was open, instead of silently overwriting their work. #}
+  {% if next_rev is defined %}<input type="hidden" name="expected_rev" value="{{ next_rev }}">{% endif %}
 
   <h3>Report details</h3>
   <div class="form-grid">
@@ -77,6 +82,7 @@
     <span id="gen-spin" class="htmx-indicator spinner">Generating report… (a few seconds)</span>
     <span class="hint">Files revision <b>R{{ next_rev if next_rev is defined else 0 }}</b>
       and opens the preview.</span>
+    <span id="draft-status" class="draft-status"></span>
   </div>
 </form>
 {# The preview target (#report-preview) lives in the "Preview & download" tab

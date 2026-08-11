@@ -47,7 +47,10 @@
 
     {# Row 1 keeps the original field names (workbook / pysam) so the route
        signature and every existing caller stay unchanged. Extra rows are
-       module_wb_N / module_ps_N / module_label_N and are read from the raw form. #}
+       module_wb_N / module_ps_N / mod_label_N and are read from the raw form.
+       NOTE: `mod_label_` (here) is deliberately distinct from the report form's
+       `module_label_` — that prefix is read by _labels_from_form for EXISTING
+       modules, and reusing it here would cross the two flows. #}
     <div id="module-rows">
       <div class="mod-row" data-mod-row="1">
         <div class="mod-row-head"><b>Module 1</b></div>

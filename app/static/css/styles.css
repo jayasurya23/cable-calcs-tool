@@ -463,6 +463,10 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 }
 .tab-active b { background: var(--crimson); color: #fff; }
 .tab .tab-note { font-size: 11px; color: var(--muted); font-weight: 400; }
+.draft-status { font-size: 12px; color: var(--muted); }
+.draft-status.draft-ok { color: #7dd67d; }
+.draft-status.draft-warn { color: #e6c34d; }
+
 /* ── New-analysis: repeatable module rows ────────────── */
 .mod-row {
   border: 1px solid var(--line); border-radius: 8px;

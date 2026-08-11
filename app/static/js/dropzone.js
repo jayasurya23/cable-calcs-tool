@@ -148,7 +148,9 @@
   /* ── New-analysis page: repeatable module rows ──────────────────────────
    * Row 1 uses the original field names (workbook / pysam) so the upload route
    * keeps its typed signature. Rows 2+ are module_wb_N / module_ps_N /
-   * module_label_N and are read out of the raw form server-side. Extra rows are
+   * mod_label_N and are read out of the raw form server-side. (`mod_label_` is
+   * deliberately NOT the report form's `module_label_` prefix, which addresses
+   * already-added modules.) Extra rows are
    * NOT `required` — an empty row is skipped rather than blocking the submit.
    */
   var nextRow = 2;

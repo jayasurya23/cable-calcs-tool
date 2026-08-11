@@ -27,6 +27,8 @@ RUN fc-cache -f
 
 # App code + vendored calc engines.
 COPY app ./app
+# The in-app /help page renders docs/USER_MANUAL.md at runtime.
+COPY docs ./docs
 COPY engines ./engines
 
 # Runtime config. DATA_DIR / UPLOAD_DIR default to the Azure Files share mounted

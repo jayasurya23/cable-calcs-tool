@@ -1,10 +1,11 @@
-{# Error fragment — returned from POST /sam/upload when processing fails. #}
+{# Error fragment for any HTMX action (upload, generate, collate, module add).
+   Callers may pass `title` and `hint`; the defaults describe an upload failure,
+   which is where this fragment started out. #}
 <div class="report">
   <div class="warnings">
-    <div class="warning">✖ Could not process the upload: {{ message }}</div>
+    <div class="warning">✖ {{ title | default("Could not process the upload") }}: {{ message }}</div>
   </div>
   <p class="hint">
-    Check that the file is a valid <code>.xlsx</code>/<code>.xlsm</code> workbook
-    exported from your SAM analysis, then try again.
+    {{ hint | default("Check that the file is a valid .xlsx/.xlsm workbook exported from your SAM analysis, then try again.") }}
   </p>
 </div>

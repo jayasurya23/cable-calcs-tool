@@ -22,6 +22,8 @@
   <script src="/static/js/dropzone.js" defer></script>
   <!-- Tabbed analysis page (delegated; survives HTMX swaps). -->
   <script src="/static/js/tabs.js" defer></script>
+  <!-- Debounced draft autosave for the report form (delegated). -->
+  <script src="/static/js/autosave.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -32,6 +34,7 @@
     <nav class="topnav">
       {% if user %}
       <a href="/projects">Projects</a>
+      <a href="/help">Help</a>
       {% if user.is_admin %}<a href="/sam/modules">Module library</a><a href="/admin/users">Users</a>{% endif %}
       <span class="user-chip" title="{{ user.email }}">{{ user.name or user.email }}</span>
       <form method="post" action="/logout" class="logout-form"><button type="submit">Sign out</button></form>
@@ -46,6 +49,7 @@
 
   <footer class="footer">
     <span>{{ app_name | default("Cable Web") }}</span>
+    <span> · <a href="/help" style="text-decoration:underline">Help &amp; user manual</a></span>
   </footer>
 
   {% block scripts %}{% endblock %}

@@ -1,12 +1,13 @@
 """Routes for the SAM report module."""
 from __future__ import annotations
 
+import asyncio
 import json
 from functools import partial
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -21,6 +22,18 @@ from . import cec_db, report_service, service
 from .report_models import ReportProject
 
 router = APIRouter(prefix="/sam", tags=["sam-report"])
+
+# One asyncio lock per analysis working dir. Report generation reads and rewrites
+# shared files in that dir, so two people (or two tabs) generating at the same
+# moment could interleave and produce a mixed document set.
+_GEN_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _generation_lock(upload_id: str) -> asyncio.Lock:
+    lock = _GEN_LOCKS.get(upload_id)
+    if lock is None:
+        lock = _GEN_LOCKS.setdefault(upload_id, asyncio.Lock())
+    return lock
 
 
 def _require_upload(upload_id: str) -> None:
@@ -151,7 +164,7 @@ async def upload(
             db, proj_rec, report.upload_id, user, name=analysis_name.strip())
 
         # Extra modules submitted on the same page (module_wb_N / module_ps_N /
-        # module_label_N). Row 1 is the `workbook`/`pysam` params above; these are
+        # mod_label_N). Row 1 is the `workbook`/`pysam` params above; these are
         # rows 2+. A row whose file input was left empty is skipped, and a module
         # that fails to parse warns without losing the rest of the upload.
         form = await request.form()
@@ -352,6 +365,27 @@ def open_analysis(request: Request, analysis_id: int,
     })
 
 
+@router.post("/analysis/{analysis_id}/draft")
+async def save_draft(request: Request, analysis_id: int,
+                     db: Session = Depends(get_db)):
+    """Autosave the in-progress report form so a refresh / stray back-click /
+    session hiccup doesn't lose 25 fields of typing.
+
+    Stores into the SAME analysis.form_json that a successful generate writes and
+    that open_analysis pre-fills from, so a recovered draft behaves exactly like a
+    previously-run form. File inputs are excluded by the client, so this never
+    re-uploads a workbook. Returns 204 (nothing to swap).
+    """
+    analysis = db.get(Analysis, analysis_id)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    form = await request.form()
+    data = {k: str(v) for k, v in form.items() if not hasattr(v, "filename")}
+    if data:
+        report_service.save_analysis_form(db, analysis, data)
+    return Response(status_code=204)
+
+
 @router.post("/analysis/{analysis_id}/rename", response_class=HTMLResponse)
 def rename_analysis(analysis_id: int, name: str = Form(""),
                     db: Session = Depends(get_db),
@@ -457,27 +491,48 @@ async def generate_report(request: Request, upload_id: str,
         # Never silently skip filing — the whole point is that documents are saved.
         return templates.TemplateResponse(
             request, "sam_report/_error.html",
-            {"message": "The upload is not linked to a project, so the report "
-                        "could not be filed. Start the analysis from a project "
-                        "page and try again."},
+            {"title": "This analysis isn’t linked to a project",
+             "message": "so the report could not be filed.",
+             "hint": "Start the analysis from a project page and try again."},
             status_code=500)
     analysis = report_service.get_or_create_analysis(db, proj_rec, upload_id, user)
     save_as = str(form.get("save_as", "new"))
     reissue = int(save_as) if save_as.isdigit() else None
     target_rev = reissue if reissue is not None else storage.next_rev_number(db, analysis)
+
+    # Concurrency guard: several people share one analysis's working directory, so
+    # a colleague filing a revision while this form sat open would silently change
+    # what "new revision" means (and overwrite the staged documents). The form
+    # carries the revision number it was rendered for — if that no longer matches,
+    # stop and tell them to reload rather than clobbering their colleague's work.
+    expected = str(form.get("expected_rev", "")).strip()
+    if reissue is None and expected.isdigit() and int(expected) != target_rev:
+        return templates.TemplateResponse(
+            request, "sam_report/_error.html",
+            {"title": "This analysis changed while you were editing",
+             "message": (
+                f"Someone else filed R{int(expected)} while you had this open, so "
+                f"your report would now be R{target_rev}."),
+             "hint": ("Reload the page to pick up their changes, then generate "
+                      "again. Your typed details were saved as a draft.")},
+            status_code=409)
     project.revision = str(target_rev)
     form_data = {k: str(v) for k, v in form.items() if not hasattr(v, "filename")}
 
     rev = None
     try:
         # DOCX->PDF conversion is sync (subprocess); run off the event loop.
-        await run_in_threadpool(
-            report_service.generate_report, upload_id, project, labels
-        )
+        # The per-analysis lock keeps two simultaneous generates from interleaving
+        # their writes to the shared staging dir (docx/pdf/modules.json).
+        async with _generation_lock(upload_id):
+            await run_in_threadpool(
+                report_service.generate_report, upload_id, project, labels
+            )
     except Exception as exc:  # noqa: BLE001 - surface generation failures
         return templates.TemplateResponse(
             request, "sam_report/_error.html",
-            {"message": f"Report generation failed: {exc}"}, status_code=500,
+            {"title": "Report generation failed", "message": str(exc),
+             "hint": "Check the report details and try again. If it keeps failing, send this message to your admin."}, status_code=500,
         )
 
     # ── Version control: file the document set under the analysis ──
@@ -494,7 +549,10 @@ async def generate_report(request: Request, upload_id: str,
     except Exception as exc:  # noqa: BLE001 - surface but keep the preview usable
         return templates.TemplateResponse(
             request, "sam_report/_error.html",
-            {"message": f"Report generated but filing the revision failed: {exc}"},
+            {"title": "Report generated, but filing the revision failed",
+             "message": str(exc),
+             "hint": "The documents were built but not saved to the project. Try "
+                     "generating again."},
             status_code=500)
     # Persist the submitted form so reopening this analysis pre-fills the last run.
     report_service.save_analysis_form(db, analysis, form_data)

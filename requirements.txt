@@ -32,3 +32,6 @@ psycopg[binary]==3.3.4
 
 # Appending uploaded datasheet PDFs to the generated report PDF (converter.py).
 pypdf==6.14.2
+
+# Renders docs/USER_MANUAL.md for the in-app /help page.
+Markdown==3.10.2
