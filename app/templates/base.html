@@ -27,7 +27,7 @@
   <!-- Project list search / filter / sort + local timestamps (delegated). -->
   <script src="/static/js/projectfilter.js" defer></script>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <header class="topbar">
     <a class="brand" href="/projects">
       <span class="brand-mark">⚡</span>

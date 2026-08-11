@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ analysis.name or "SAM analysis" }} · SAM Analysis{% endblock %}
+{% block body_class %}layout-wide{% endblock %}
 
 {% block breadcrumb %}
 <nav class="breadcrumb">
@@ -10,22 +11,20 @@
 {% endblock %}
 
 {% block content %}
-<section class="page-head">
-  <h1>{{ analysis.name or "SAM analysis" }}</h1>
-  <p class="subtitle">
-    Editing a saved analysis. Adjust the inputs below and press <strong>Generate report</strong>
-    to file the next revision (<strong>R{{ next_rev }}</strong>) — every earlier revision is kept.
-  </p>
+{# Compact head: the title doubles as the rename field, so the page starts at the
+   work instead of a heading, a paragraph and a separate labelled form. #}
+<section class="page-head work-head">
   <form class="rename-form" hx-post="/sam/analysis/{{ analysis.id }}/rename"
-        hx-target="#rename-status" hx-swap="innerHTML"
-        style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
-    <label style="margin:0;font-size:13px;color:var(--muted)">Analysis name
-      <input class="auth-input" name="name" value="{{ analysis.name }}"
-             style="min-width:260px;margin-left:8px;width:auto;display:inline-block">
-    </label>
+        hx-target="#rename-status" hx-swap="innerHTML">
+    <input class="title-input" name="name" value="{{ analysis.name }}"
+           aria-label="Analysis name" placeholder="Analysis name">
     <button class="btn btn-sm btn-secondary" type="submit">Rename</button>
     <span id="rename-status" class="dims"></span>
   </form>
+  <p class="work-sub">
+    <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a>
+    · next revision <b>R{{ next_rev }}</b> · earlier revisions are kept
+  </p>
 </section>
 
 <section id="report" class="report-slot">

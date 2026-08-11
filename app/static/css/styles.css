@@ -356,28 +356,103 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 .btn-secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
 .btn-secondary:hover { border-color: var(--crimson); }
 
-.report-form {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 22px;
-  margin-top: 16px;
+/* Work pages (the report form) use the full screen — the 1100px reading width
+   left ~55% of a wide monitor empty while the form scrolled for pages. */
+body.layout-wide .content { max-width: 1560px; }
+
+.work-head { margin-bottom: 6px; }
+.work-head .rename-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* The title IS the rename field — no separate heading + labelled form stacked up. */
+.title-input {
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  color: var(--text); font-size: 28px; font-weight: 700; font-family: inherit;
+  padding: 4px 10px; min-width: 320px; max-width: 100%;
 }
-.report-form h3 { margin-top: 0; }
-.report-form h4 { margin: 20px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
-.form-grid label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; }
-.form-grid input, .form-grid select {
-  padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line);
-  border-radius: 6px; color: var(--text); font-size: 14px;
+.title-input:hover { border-color: var(--line); }
+.title-input:focus { outline: none; border-color: var(--crimson); background: var(--panel); }
+.work-head .rename-form .btn { opacity: 0; transition: opacity .15s; }
+.work-head .rename-form:hover .btn,
+.work-head .rename-form:focus-within .btn { opacity: 1; }
+.work-sub { color: var(--muted); font-size: 13px; margin: 2px 0 0 11px; }
+.work-sub a { text-decoration: underline; text-decoration-color: var(--line); }
+
+/* ── Report form ─────────────────────────────────────── */
+.report-form { margin-top: 14px; padding-bottom: 84px; }   /* room for the sticky bar */
+
+/* Two columns on wide screens: the long left column of details next to the
+   modules/datasheets work area, instead of one very long single column. */
+.form-cols { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+@media (min-width: 1180px) {
+  .form-cols { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; }
 }
-.form-grid input:focus, .form-grid select:focus { outline: none; border-color: var(--crimson); }
-.field-full { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; margin-top: 10px; }
-.field-full textarea {
-  padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line);
-  border-radius: 6px; color: var(--text); font-size: 14px; font-family: inherit; resize: vertical;
+.form-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* Each group is its own card, so sections are distinguishable at a glance
+   rather than separated by a single hairline. */
+.form-section {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px 16px;
 }
-.field-full textarea:focus { outline: none; border-color: var(--crimson); }
+.fs-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+.form-section h4 {
+  margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--text);
+  border: 0; padding: 0;
+}
+/* A short accent so each section header has a visual anchor. */
+.form-section h4::before {
+  content: ""; display: inline-block; width: 3px; height: 12px;
+  background: var(--crimson); border-radius: 2px; margin-right: 8px;
+  vertical-align: -1px;
+}
+.fs-note { color: var(--muted); font-size: 12px; }
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 12px; }
+.form-grid label, .field-full {
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted);
+}
+.field-full { margin-top: 10px; }
+/* One rule for every control in the form. `.field-full input` previously had NO
+   styling at all, so the Weather-data box rendered as a white browser default. */
+.form-grid input, .form-grid select,
+.field-full input, .field-full textarea {
+  padding: 7px 9px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 6px; color: var(--text);
+  font-size: 13px; font-weight: 400; letter-spacing: normal; text-transform: none;
+  font-family: inherit; width: 100%;
+}
+.field-full textarea { resize: vertical; }
+.form-grid input:focus, .form-grid select:focus,
+.field-full input:focus, .field-full textarea:focus {
+  outline: none; border-color: var(--crimson);
+}
+.form-grid input::placeholder, .field-full input::placeholder { color: #6d6d6d; }
+
+/* Sticky action bar: the submit and the revision it files stay in reach. */
+.form-actionbar {
+  position: sticky; bottom: 0; z-index: 5;
+  display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
+  margin-top: 14px; padding: 12px 16px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: 0 -6px 18px rgba(0,0,0,.35);
+}
+.ab-field {
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted);
+}
+.ab-field input, .ab-field select {
+  padding: 7px 9px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 6px; color: var(--text); font-size: 13px;
+  font-weight: 400; letter-spacing: normal; text-transform: none; min-width: 200px;
+}
+.ab-field input:focus, .ab-field select:focus { outline: none; border-color: var(--crimson); }
+.ab-spacer { flex: 1 1 auto; }
 
 .derived-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .derived-label { color: var(--muted); font-size: 13px; }
