@@ -26,6 +26,15 @@
     current deliverable.</span>
 </div>
 
+{% set ident = [("Owner", project.owner_name), ("EPC", project.epc_name),
+                ("EOR", project.eor), ("Designer", project.designer)]
+               | selectattr(1) | list %}
+{% if ident %}
+<div class="spec-chips" style="margin:14px 0 4px">
+  {% for label, value in ident %}<span class="chip"><b>{{ label }}</b> {{ value }}</span>{% endfor %}
+</div>
+{% endif %}
+
 {% set sam_analyses = analyses | selectattr("kind", "equalto", "sam_report") | list %}
 <div class="report-generate">
   <a class="btn btn-primary btn-lg" href="/sam?project={{ project.id }}">+ New analysis</a>
@@ -43,6 +52,8 @@
     <div class="analysis-head">
       <h4>{{ a.name or "Untitled analysis" }}
         {% if a.kind == "sam_collated" %}<span class="pill pill-muted">Combined</span>{% endif %}
+        {% if revs %}<span class="pill pill-current">R{{ revs[0].rev_number }}</span>
+        {% else %}<span class="pill pill-muted">Draft</span>{% endif %}
       </h4>
       <div class="analysis-actions">
         {% if a.kind == "sam_collated" %}
@@ -71,7 +82,7 @@
          href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ latest.rev_number }}/{{ ld.docx | urlencode }}">Word (.docx)</a>
       {% endif %}
       <span class="dl-meta">Current deliverable · <b>R{{ latest.rev_number }}</b>{% if latest.label %} · {{ latest.label }}{% endif %}
-        · filed {{ latest.updated_at.strftime("%Y-%m-%d") }}{% if latest.creator %} by {{ latest.creator.name }}{% endif %}</span>
+        · filed <time datetime="{{ latest.created_at.isoformat() }}Z" class="js-localdate">{{ latest.created_at.strftime("%Y-%m-%d") }}</time>{% if latest.creator %} by {{ latest.creator.name }}{% endif %}</span>
     </div>
 
     <details class="rev-history">
@@ -84,10 +95,10 @@
             {% set d = rev_docs[r.id] %}
             <tr>
               <td><b>R{{ r.rev_number }}</b>{% if loop.first %}<span class="pill pill-current">current</span>{% endif %}</td>
-              <td>{{ r.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td><time datetime="{{ r.created_at.isoformat() }}Z" class="js-localdate">{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</time></td>
               <td>{{ r.creator.name if r.creator else "—" }}</td>
-              <td>{{ r.label }}</td>
-              <td>{{ r.reissue_count if r.reissue_count else "" }}</td>
+              <td>{{ r.label or "—" }}</td>
+              <td>{{ r.reissue_count or "—" }}</td>
               <td>
                 {% if d.pdf %}
                 <a class="doc-link" href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}/{{ d.pdf | urlencode }}">{{ d.pdf }}</a>

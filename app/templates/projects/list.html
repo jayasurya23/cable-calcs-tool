@@ -2,33 +2,85 @@
 {% block title %}Projects — Cable Web{% endblock %}
 
 {% block content %}
-<section class="page-head">
-  <h1>Projects</h1>
-  <p class="subtitle">A project is one job. Inside it you create <strong>analyses</strong> (each a saved
-    SAM setup you re-run), and every report you generate is filed as a numbered <strong>revision</strong> — R0, R1, R2…</p>
+<section class="page-head page-head-row">
+  <div>
+    <h1>Projects</h1>
+    <p class="subtitle">A project is one job. Inside it you create <strong>analyses</strong> (each a saved
+      SAM setup you re-run), and every report you generate is filed as a numbered <strong>revision</strong> — R0, R1, R2…</p>
+  </div>
+  <button type="button" class="btn btn-primary" id="new-project-toggle">+ New project</button>
 </section>
 
-<form method="post" action="/projects" class="new-project-form">
+<form method="post" action="/projects" class="new-project-form" id="new-project-form" hidden>
   <input name="name" placeholder="New project name (e.g. Franklin Solar, LLC)" required>
   <input name="code" placeholder="Project ID (e.g. 259-034)" style="max-width:160px">
-  <button class="btn btn-primary">+ Create project</button>
+  <button class="btn btn-primary">Create project</button>
 </form>
 
-<div class="cards" style="margin-top:20px">
+{% if projects %}
+{# Filtering is client-side: every project is already rendered, so it's instant
+   and needs no round-trip. See /static/js/projectfilter.js #}
+<div class="list-toolbar js-project-filter">
+  <input type="search" id="project-search" class="auth-input" autocomplete="off"
+         placeholder="Search projects by name or ID…" aria-label="Search projects">
+  <div class="seg" role="group" aria-label="Filter by status">
+    <button type="button" class="seg-btn seg-active" data-status="active">Active</button>
+    <button type="button" class="seg-btn" data-status="archived">Archived</button>
+    <button type="button" class="seg-btn" data-status="all">All</button>
+  </div>
+  <select id="project-sort" class="auth-input" aria-label="Sort projects" style="max-width:190px">
+    <option value="recent">Recently active</option>
+    <option value="name">Name (A–Z)</option>
+    <option value="created">Newest created</option>
+  </select>
+  <span id="project-count" class="hint"></span>
+</div>
+{% endif %}
+
+<div class="cards" id="project-cards" style="margin-top:16px">
   {% for p in projects %}
-  {% set n = p.analyses | length %}
-  <a class="card" href="/projects/{{ p.id }}">
+  {% set st = stats[p.id] %}
+  <a class="card project-card"
+     href="/projects/{{ p.id }}"
+     data-name="{{ p.name | lower }}"
+     data-code="{{ (p.code or '') | lower }}"
+     data-status="{{ p.status }}"
+     data-activity="{{ st.last_activity.isoformat() if st.last_activity else '' }}"
+     data-created="{{ p.created_at.isoformat() }}">
     <div class="card-head">
       <h2>{{ p.name }}</h2>
       {% if p.status == "active" %}<span class="pill pill-ok">active</span>
       {% else %}<span class="pill pill-muted">archived</span>{% endif %}
     </div>
-    <p>{% if p.code %}ID {{ p.code }} · {% endif %}{{ n }} analys{{ "is" if n == 1 else "es" }}
-       · created {{ p.created_at.strftime("%Y-%m-%d") }}{% if p.creator %} by {{ p.creator.name }}{% endif %}</p>
+
+    <p class="card-id">{% if p.code %}ID {{ p.code }}{% else %}<span class="dims">no project ID</span>{% endif %}</p>
+
+    {# What actually matters: does this job have an issued deliverable yet? #}
+    <div class="spec-chips">
+      {% if st.analyses %}
+        <span class="chip">{{ st.analyses }} analys{{ "is" if st.analyses == 1 else "es" }}</span>
+        {% if st.issued %}
+          <span class="chip chip-ok">{{ st.issued }} issued</span>
+        {% else %}
+          <span class="chip chip-dim">no report yet</span>
+        {% endif %}
+      {% else %}
+        <span class="chip chip-dim">empty — no analyses</span>
+      {% endif %}
+    </div>
+
+    <p class="card-foot dims">
+      {% if st.last_activity %}
+      Last activity <time datetime="{{ st.last_activity.isoformat() }}Z" class="js-localdate">{{ st.last_activity.strftime("%Y-%m-%d") }}</time>
+      {% endif %}
+      {%- if p.creator %} · created by {{ p.creator.name }}{% endif %}
+    </p>
   </a>
   {% else %}
   <p class="hint">No projects yet. A project is one job — it stores your cover-sheet details and every
-    report you generate. Create your first one above to get started.</p>
+    report you generate. Click <b>+ New project</b> to create your first one.</p>
   {% endfor %}
 </div>
+
+<p id="project-empty" class="hint" hidden>No projects match that search.</p>
 {% endblock %}

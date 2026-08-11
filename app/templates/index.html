@@ -8,6 +8,9 @@
     Web tooling for PV cable design. Starting with SAM analysis reports —
     the full DC/AC/MV cable-calc suite moves here next.
   </p>
+  {# Engine health is an internal probe — it told users nothing and led the page.
+     Admins can still see it at a glance; everyone else gets a real next step. #}
+  {% if user and user.is_admin %}
   <p class="status-line">
     Shared calc engines:
     {% if engines_available %}
@@ -15,6 +18,10 @@
     {% else %}
       <span class="pill pill-warn">not loaded</span>
     {% endif %}
+  </p>
+  {% endif %}
+  <p style="margin-top:18px">
+    <a class="btn btn-primary btn-lg" href="/projects">Go to projects →</a>
   </p>
 </section>
 

@@ -24,20 +24,34 @@
   <script src="/static/js/tabs.js" defer></script>
   <!-- Debounced draft autosave for the report form (delegated). -->
   <script src="/static/js/autosave.js" defer></script>
+  <!-- Project list search / filter / sort + local timestamps (delegated). -->
+  <script src="/static/js/projectfilter.js" defer></script>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/">
+    <a class="brand" href="/projects">
       <span class="brand-mark">⚡</span>
       <span class="brand-text">Cable&nbsp;Web</span>
     </a>
+    {# `request` is in every template context, so the current path drives the
+       active state with no router changes. #}
+    {% set path = request.url.path if request else "" %}
     <nav class="topnav">
       {% if user %}
-      <a href="/projects">Projects</a>
-      <a href="/help">Help</a>
-      {% if user.is_admin %}<a href="/sam/modules">Module library</a><a href="/admin/users">Users</a>{% endif %}
-      <span class="user-chip" title="{{ user.email }}">{{ user.name or user.email }}</span>
-      <form method="post" action="/logout" class="logout-form"><button type="submit">Sign out</button></form>
+      {# /sam/* pages are analyses, which live under Projects — keep it lit. #}
+      <a href="/projects" class="{{ 'nav-active' if path.startswith('/projects') or (path.startswith('/sam') and not path.startswith('/sam/modules')) }}">Projects</a>
+      <a href="/help" class="{{ 'nav-active' if path == '/help' }}">Help</a>
+      {% if user.is_admin %}
+      <span class="nav-group">
+        <span class="nav-group-label">Admin</span>
+        <a href="/sam/modules" class="{{ 'nav-active' if path.startswith('/sam/modules') }}">Module library</a>
+        <a href="/admin/users" class="{{ 'nav-active' if path.startswith('/admin') }}">Users</a>
+      </span>
+      {% endif %}
+      <span class="topnav-user">
+        <span class="user-chip" title="{{ user.email }}">{{ user.name or user.email }}<span class="pill pill-muted" style="margin-left:6px">{{ user.role }}</span></span>
+        <form method="post" action="/logout" class="logout-form"><button type="submit">Sign out</button></form>
+      </span>
       {% endif %}
     </nav>
   </header>

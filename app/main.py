@@ -65,7 +65,28 @@ async def _needs_login(request: Request, exc: NeedsLogin):
 
 @app.exception_handler(Forbidden)
 async def _forbidden(request: Request, exc: Forbidden):
-    return HTMLResponse("<h1>403 — admin access required</h1>", status_code=403)
+    """A bare <h1> with no chrome left users stranded — give them a way back."""
+    return templates.TemplateResponse(request, "error_page.html", {
+        "title": "Admin access required",
+        "message": "This page is limited to administrators. If you need access, "
+                   "ask an admin to change your role.",
+        "back_url": "/projects",
+        "back_label": "← Back to projects",
+    }, status_code=403)
+
+
+from app.modules.projects.router import ProjectNotFound
+
+
+@app.exception_handler(ProjectNotFound)
+async def _project_missing(request: Request, exc: ProjectNotFound):
+    """A deleted/stale project link used to render raw JSON."""
+    return templates.TemplateResponse(request, "error_page.html", {
+        "title": "Project not found",
+        "message": "That project doesn’t exist any more — it may have been deleted.",
+        "back_url": "/projects",
+        "back_label": "← Back to projects",
+    }, status_code=404)
 
 
 DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
