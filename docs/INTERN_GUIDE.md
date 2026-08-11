@@ -55,6 +55,8 @@ yourself.
 
 ## 4. Your first report
 
+![The Projects page: search, filter by status, and each card showing whether the job has an issued report.](img/projects.png)
+
 **Step 1 — Open or create the project**
 *Projects* in the top bar. Search by name or project ID. Create one with
 **+ New project** if it doesn't exist yet.
@@ -64,6 +66,8 @@ On the project page, expand **Project details & cover-sheet defaults** and set
 Owner, EPC, Engineering firm, EOR, Designer, Check. Every report in this project
 will pre-fill from these — you won't retype them.
 
+![The New analysis page: name it, then add one workbook per module with its pysam or datasheet.](img/newanalysis.png)
+
 **Step 3 — Start a new analysis**
 **+ New analysis**. Give it a name you'll recognise later (usually the module,
 e.g. *"Boviet 615 W bifacial"*), then add your workbook and its pysam or
@@ -71,11 +75,15 @@ datasheet. Press **Analyze**.
 
 Parsing takes roughly 15 seconds per module — that's normal.
 
+![The Results tab: per-year Max Isc, Max Voc and the 3-hour rolling average, worst case in the Maximum row.](img/analysis_results.png)
+
 **Step 4 — Check the numbers (tab 1, Results)**
 You land on **Results**: the per-year table of Max Isc, Max Voc and the 3-hour
 rolling average, with the worst case in the **Maximum** row. Sanity-check it
 before going further. There is a **Workbook data** tab if you want to see the raw
 sheets.
+
+![The Report details tab: your inputs on the left, modules and datasheets on the right, and the Generate bar pinned at the bottom.](img/analysis_details.png)
 
 **Step 5 — Fill in the report details (tab 2)**
 Most of it is already filled from your pysam. Check:
