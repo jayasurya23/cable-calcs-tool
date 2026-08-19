@@ -182,18 +182,56 @@ def test_ai_extraction_is_off_without_a_key(monkeypatch):
     unconfigured deployment behaves exactly as it did before."""
     from app.config import settings
     from app.modules.sam_report import ai_extract
+    monkeypatch.setattr(settings, "openai_api_key", "")
     monkeypatch.setattr(settings, "anthropic_api_key", "")
+    monkeypatch.setattr(settings, "ai_provider", "")
+    assert ai_extract.provider() == ""
     assert ai_extract.is_enabled() is False
     # …and calling it anyway is a no-op rather than an error.
     assert ai_extract.extract("does-not-matter.pdf") is None
 
 
+def test_provider_follows_whichever_key_is_configured(monkeypatch):
+    from app.config import settings
+    from app.modules.sam_report import ai_extract
+    monkeypatch.setattr(settings, "ai_provider", "")
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-openai")
+    assert ai_extract.provider() == "openai"
+    assert ai_extract._default_model("openai").startswith("gpt")
+
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant")
+    assert ai_extract.provider() == "anthropic"
+
+    # An explicit setting overrides key-order inference.
+    monkeypatch.setattr(settings, "openai_api_key", "sk-openai")
+    monkeypatch.setattr(settings, "ai_provider", "anthropic")
+    assert ai_extract.provider() == "anthropic"
+
+
 def test_ai_extraction_can_be_switched_off_even_with_a_key(monkeypatch):
     from app.config import settings
     from app.modules.sam_report import ai_extract
-    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
     monkeypatch.setattr(settings, "ai_datasheet_extraction", False)
     assert ai_extract.is_enabled() is False
+
+
+def test_a_failing_ai_call_never_breaks_the_upload(monkeypatch, tmp_path):
+    """Bad key, no network, rate limit — all must degrade to the old behaviour."""
+    from app.config import settings
+    from app.modules.sam_report import ai_extract
+    monkeypatch.setattr(settings, "ai_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-invalid")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("401 invalid api key")
+    monkeypatch.setattr(ai_extract, "_OPENAI", boom)
+
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4 not really")
+    assert ai_extract.extract(pdf) is None      # swallowed, not raised
 
 
 def test_deterministic_match_never_calls_the_ai(monkeypatch, tmp_path):
@@ -201,7 +239,8 @@ def test_deterministic_match_never_calls_the_ai(monkeypatch, tmp_path):
     identified locally, without the datasheet leaving the network."""
     from app.config import settings
     from app.modules.sam_report import ai_extract, datasheet_parser
-    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(settings, "ai_provider", "openai")
 
     called = []
     monkeypatch.setattr(ai_extract, "extract", lambda p: called.append(p))

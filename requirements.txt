@@ -37,5 +37,6 @@ pypdf==6.14.2
 Markdown==3.10.2
 
 # Optional: AI reading of module datasheets (app/modules/sam_report/ai_extract.py).
-# Inert unless ANTHROPIC_API_KEY is set — the feature is off by default.
+# Inert unless OPENAI_API_KEY (or ANTHROPIC_API_KEY) is set — off by default.
+openai==3.3.0
 anthropic==0.123.0
