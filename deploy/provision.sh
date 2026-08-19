@@ -190,6 +190,13 @@ SECRETS=( "database-url=${DATABASE_URL}" "acr-password=${ACR_PASS}" )
 if [ -n "${ENTRA_CLIENT_SECRET:-}" ]; then
   SECRETS+=( "entra-client-secret=${ENTRA_CLIENT_SECRET}" )
 fi
+# The AI datasheet-reader key is a secret too — never a plain env var.
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+  SECRETS+=( "openai-api-key=${OPENAI_API_KEY}" )
+fi
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  SECRETS+=( "anthropic-api-key=${ANTHROPIC_API_KEY}" )
+fi
 az containerapp secret set -g "$RG" -n "$APP" --secrets "${SECRETS[@]}" -o none
 # The registry itself is configured once in the create manifest (registries[] ->
 # passwordSecretRef: acr-password). It references the secret by name, so refreshing
@@ -217,6 +224,12 @@ if [ -n "${ADMIN_EMAILS:-}" ];       then ENVVARS+=( "ADMIN_EMAILS=${ADMIN_EMAIL
 if [ -n "${ENTRA_TENANT_ID:-}" ];    then ENVVARS+=( "ENTRA_TENANT_ID=${ENTRA_TENANT_ID}" ); fi
 if [ -n "${ENTRA_CLIENT_ID:-}" ];    then ENVVARS+=( "ENTRA_CLIENT_ID=${ENTRA_CLIENT_ID}" ); fi
 if [ -n "${ENTRA_CLIENT_SECRET:-}" ]; then ENVVARS+=( "ENTRA_CLIENT_SECRET=secretref:entra-client-secret" ); fi
+# Optional AI datasheet reader. Unset = the feature stays off in the container.
+if [ -n "${OPENAI_API_KEY:-}" ];    then ENVVARS+=( "OPENAI_API_KEY=secretref:openai-api-key" ); fi
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then ENVVARS+=( "ANTHROPIC_API_KEY=secretref:anthropic-api-key" ); fi
+if [ -n "${AI_PROVIDER:-}" ];       then ENVVARS+=( "AI_PROVIDER=${AI_PROVIDER}" ); fi
+if [ -n "${AI_MODEL:-}" ];          then ENVVARS+=( "AI_MODEL=${AI_MODEL}" ); fi
+if [ -n "${AI_DATASHEET_EXTRACTION:-}" ]; then ENVVARS+=( "AI_DATASHEET_EXTRACTION=${AI_DATASHEET_EXTRACTION}" ); fi
 # --revision-suffix forces a NEW revision every run, so the freshly built image tag
 # is actually re-pulled (an unchanged :latest string alone would be a no-op).
 #

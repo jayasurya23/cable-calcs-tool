@@ -105,6 +105,12 @@ def identify(path) -> dict | None:
     """
     text = extract_text(path)
     if not len((text or "").strip()):
+        # A scan or image-only PDF: there is nothing for any text-based step to
+        # work with. Reading it is exactly what the AI reader is for, so hand it
+        # straight over rather than giving up here.
+        from . import ai_extract
+        if ai_extract.is_enabled():
+            return _from_ai(path, {})
         return None
     norm_text = _norm(text)
 
@@ -146,21 +152,9 @@ def identify(path) -> dict | None:
     # usable text. The answer is a suggestion for the engineer to confirm.
     from . import ai_extract
     if ai_extract.is_enabled():
-        ai = ai_extract.extract(path)
-        if ai and ai.get("display"):
-            merged = dict(specs)
-            merged.update(ai.get("specs") or {})
-            # The AI may have read a module the CEC database does carry, on a sheet
-            # whose text defeated us — re-check by the numbers it recovered.
-            by_ai_specs = cec_db.lookup_by_specs(merged, text_hint=ai.get("manufacturer", ""))
-            if by_ai_specs and by_ai_specs["confident"]:
-                m, _, mo = by_ai_specs["display"].partition("—")
-                return {"display": by_ai_specs["display"], "manufacturer": m.strip(),
-                        "model": mo.strip(), "source": "cec-specs",
-                        "params": by_ai_specs["params"], "specs": merged}
-            return {"display": ai["display"], "manufacturer": ai["manufacturer"],
-                    "model": ai["model"], "source": "ai", "params": {},
-                    "specs": merged, "ai_confidence": ai.get("confidence", "")}
+        from_ai = _from_ai(path, specs)
+        if from_ai is not None:
+            return from_ai
 
     # ── 4. Fall back to whatever the datasheet itself states ──
     mfr, model = _guess_name(text)
@@ -252,3 +246,25 @@ def _guess_name(text: str) -> tuple[str, str]:
         mfr = ln
         break
     return mfr, model
+
+
+def _from_ai(path, specs: dict) -> dict | None:
+    """Let the configured model read the sheet, then give the deterministic
+    matcher a second chance with whatever numbers it recovered — a scan may well
+    depict a module the CEC database does carry."""
+    from . import ai_extract
+    ai = ai_extract.extract(path)
+    if not ai or not ai.get("display"):
+        return None
+    merged = dict(specs or {})
+    merged.update(ai.get("specs") or {})
+
+    by_specs = cec_db.lookup_by_specs(merged, text_hint=ai.get("manufacturer", ""))
+    if by_specs and by_specs["confident"]:
+        mfr, _, model = by_specs["display"].partition("—")
+        return {"display": by_specs["display"], "manufacturer": mfr.strip(),
+                "model": model.strip(), "source": "cec-specs",
+                "params": by_specs["params"], "specs": merged}
+    return {"display": ai["display"], "manufacturer": ai["manufacturer"],
+            "model": ai["model"], "source": "ai", "params": {},
+            "specs": merged, "ai_confidence": ai.get("confidence", "")}

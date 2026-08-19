@@ -252,3 +252,34 @@ def test_deterministic_match_never_calls_the_ai(monkeypatch, tmp_path):
     found = datasheet_parser.identify(pdf)
     assert found["source"].startswith("cec")
     assert called == [], "a CEC-identifiable module must not be sent to the AI"
+
+
+def test_a_scanned_pdf_reaches_the_ai_reader(monkeypatch, tmp_path):
+    """Regression: identify() used to bail out as soon as a PDF yielded no text,
+    which meant a scan — the exact case the AI reader exists for — never got
+    there. With AI off it must still return None."""
+    from pypdf import PdfWriter
+    from app.config import settings
+    from app.modules.sam_report import ai_extract, datasheet_parser
+
+    scan = tmp_path / "scan.pdf"           # a page with no text layer
+    w = PdfWriter()
+    w.add_blank_page(width=612, height=792)
+    with open(scan, "wb") as fh:
+        w.write(fh)
+
+    # AI off -> unchanged behaviour.
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    monkeypatch.setattr(settings, "ai_provider", "")
+    assert datasheet_parser.identify(scan) is None
+
+    # AI on -> the scan is handed to the reader instead of being dropped.
+    monkeypatch.setattr(settings, "ai_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(ai_extract, "extract", lambda p: {
+        "display": "Nonesuch — NS-1", "manufacturer": "Nonesuch", "model": "NS-1",
+        "specs": {"voc": 45.9}, "confidence": "high",
+    })
+    found = datasheet_parser.identify(scan)
+    assert found is not None and found["display"] == "Nonesuch — NS-1"
