@@ -126,7 +126,21 @@ def identify(path) -> dict | None:
         return {"display": best[1], "manufacturer": mfr.strip(), "model": model.strip(),
                 "source": "cec", "params": best[2], "specs": specs}
 
-    # ── 2. Fall back to whatever the datasheet itself states ──
+    # ── 2. Identify by the NUMBERS when the text didn't name it ──
+    # A datasheet always publishes Voc / Isc / Vmp / Imp even when its layout
+    # defeats name extraction, and those four are most of what fingerprints a
+    # module in the CEC database. This catches sheets whose front matter is
+    # marketing copy or a cell-technology label rather than a part number.
+    by_specs = cec_db.lookup_by_specs(specs, text_hint=text)
+    if by_specs:
+        mfr, _, model = by_specs["display"].partition("—")
+        return {"display": by_specs["display"], "manufacturer": mfr.strip(),
+                "model": model.strip(),
+                "source": "cec-specs" if by_specs["confident"] else "cec-specs-ambiguous",
+                "params": by_specs["params"], "specs": specs,
+                "alternatives": by_specs.get("alternatives", [])}
+
+    # ── 3. Fall back to whatever the datasheet itself states ──
     mfr, model = _guess_name(text)
     display = f"{mfr} — {model}" if mfr and model else (model or mfr or "")
     return {"display": display, "manufacturer": mfr, "model": model,

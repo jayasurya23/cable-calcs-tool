@@ -9,6 +9,7 @@
 </div>
 
 {% if error %}<div class="warning">⚠ {{ error }}</div>{% endif %}
+{% if saved_msg %}<div class="notice-ok">✓ {{ saved_msg }}</div>{% endif %}
 
 <div class="module-rows">
   {% for m in modules %}
@@ -22,12 +23,19 @@
                      if previews and previews|length > loop.index0 else m.pysam) %}
     {% if has_ps %}
     <span class="chip chip-ok" title="System Size / DC-AC filled from this module’s pysam">📄 pysam</span>
-    {% elif m.datasheet and m.info_source == 'cec' %}
+    {% elif m.datasheet and m.info_source in ['cec', 'cec-specs'] %}
     <span class="chip chip-ok"
           title="Matched in the CEC database from the datasheet — System Size / DC-AC still need a pysam">📕 datasheet</span>
     {% elif m.datasheet %}
     <span class="chip chip-warn"
           title="{{ m.info_note or 'Name read from the datasheet text — please check it.' }}">📕 datasheet · check name</span>
+    {# Not in the CEC database: once the engineer has the name right, save it so
+       this module is recognised automatically from now on. #}
+    <button type="button" class="btn btn-secondary btn-sm chip-action"
+            title="Check the name on the left is right, then save this module to the library"
+            hx-post="/sam/report/{{ upload_id }}/module/{{ loop.index0 }}/library"
+            hx-target="#modules-section" hx-swap="innerHTML"
+            hx-include="closest form">＋ Save to library</button>
     {% else %}
     <span class="chip chip-dim" title="No pysam or datasheet — this module’s System Size / DC-AC show a dash">no pysam</span>
     {% endif %}

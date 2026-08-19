@@ -282,3 +282,124 @@ def stats() -> dict:
         "source": "NREL cache" if src == _cached_csv() else "bundled",
         "cache_age_days": (round(age / 86400, 1) if age is not None else None),
     }
+
+
+# ─── identify from nameplate specs (no name needed) ──────────────────────────
+
+# Datasheets round their published values, so match on a tolerance rather than
+# equality. Deliberately tight: a false match is worse than no match.
+_SPEC_TOL = {"V_oc_ref": 0.30, "I_sc_ref": 0.15, "V_mp_ref": 0.30, "I_mp_ref": 0.15}
+_SPEC_FROM_SHEET = {"voc": "V_oc_ref", "isc": "I_sc_ref",
+                    "vmp": "V_mp_ref", "imp": "I_mp_ref"}
+
+
+def lookup_by_specs(specs: dict, text_hint: str = "") -> dict | None:
+    """Identify a module from its nameplate values alone.
+
+    A datasheet always states Voc / Isc / Vmp / Imp even when its layout defeats
+    name extraction, and those four are most of what fingerprints a module in the
+    CEC database — so the numbers can identify it when the text cannot.
+
+    Returns {"display", "params", "confident"} or None. `confident` is False when
+    several different modules match the same numbers (common for one panel sold
+    under several brand names), in which case the caller should ask rather than
+    assume.
+    """
+    wanted = {_SPEC_FROM_SHEET[k]: float(v) for k, v in (specs or {}).items()
+              if k in _SPEC_FROM_SHEET and v is not None}
+    if len(wanted) < 3:                    # too little to discriminate on
+        return None
+
+    # An engineer already verified this module -> that answer wins outright.
+    verified = _custom_spec_match(wanted)
+    if verified:
+        return verified
+
+    hits: list[tuple[float, str, dict]] = []
+    for bucket in _get_index().values():
+        for display, params in bucket:
+            dist = 0.0
+            for key, target in wanted.items():
+                delta = abs(params[key] - target)
+                if delta > _SPEC_TOL[key]:
+                    break
+                dist += delta
+            else:
+                hits.append((dist, display, params))
+    if not hits:
+        return None
+
+    # Nameplate values alone are NOT unique: commodity 60-cell panels from
+    # different manufacturers publish near-identical Voc/Isc/Vmp/Imp. Measured on
+    # the real database, one set of numbers matched Qcells, AXITEC, BYD and
+    # Centrosolar. So the specs narrow the field; the manufacturer named in the
+    # datasheet text is what settles it.
+    hint = _norm_text(text_hint)
+    if hint:
+        branded = [h for h in hits if _mfr_of(h[1]) and _norm_text(_mfr_of(h[1])) in hint]
+        if branded:
+            hits = branded
+
+    hits.sort(key=lambda h: (h[0], len(h[1])))
+    best_dist, best_display, best_params = hits[0]
+    names = {d for _, d, _ in hits}
+    # The risk being guarded against is attaching the WRONG MANUFACTURER. Several
+    # remaining entries from the same maker are usually naming variants of one
+    # physical panel (e.g. "Q.PRO-G3 245" / "Q.PRO BFR-G3 245"), which is a safe
+    # pick; several different makers is not.
+    makers = {_mfr_of(d) for d in names}
+    return {"display": best_display, "params": best_params,
+            "confident": len(makers) == 1, "alternatives": sorted(names)[:6]}
+
+
+def _norm_text(s: str) -> str:
+    import re as _re
+    return _re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def _mfr_of(display: str) -> str:
+    return display.partition("—")[0].strip()
+
+
+def add_custom_module_from_specs(manufacturer: str, model: str, specs: dict) -> str:
+    """Remember a module the CEC database doesn't carry, keyed on the nameplate
+    values read from its datasheet, under an engineer-verified name.
+
+    This closes the loop for brand-new panels: the datasheet gives the numbers,
+    the engineer confirms the name, and every later upload of that module is
+    identified automatically. Because a person verified it, a match here is
+    treated as authoritative even though nameplate values alone are otherwise
+    ambiguous (several makers publish identical ones).
+    """
+    wanted = {_SPEC_FROM_SHEET[k]: float(v) for k, v in (specs or {}).items()
+              if k in _SPEC_FROM_SHEET and v is not None}
+    if len(wanted) < 3:
+        raise ValueError("That datasheet didn't yield enough nameplate values "
+                         "(need at least three of Voc, Isc, Vmp, Imp) to identify "
+                         "the module later.")
+    manufacturer, model = manufacturer.strip(), model.strip()
+    if not model:
+        raise ValueError("Enter the module model name.")
+    display = f"{manufacturer} — {model}" if manufacturer else model
+
+    entries = _load_custom()
+    entries = [e for e in entries
+               if not (e.get("kind") == "specs" and e.get("specs") == wanted)]
+    entries.append({"display": display, "manufacturer": manufacturer,
+                    "model": model, "kind": "specs", "specs": wanted,
+                    "params": {}})
+    _custom_json().write_text(json.dumps(entries), encoding="utf-8")
+    return display
+
+
+def _custom_spec_match(wanted: dict) -> dict | None:
+    """A verified custom module whose nameplate values match. Engineer-confirmed,
+    so it outranks anything inferred from the CEC database."""
+    for e in _load_custom():
+        if e.get("kind") != "specs":
+            continue
+        saved = e.get("specs") or {}
+        if all(abs(saved.get(k, 1e9) - v) <= _SPEC_TOL[k] for k, v in wanted.items()):
+            return {"display": e["display"], "params": {}, "confident": True,
+                    "alternatives": [], "custom": True}
+    return None

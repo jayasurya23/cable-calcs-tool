@@ -308,15 +308,27 @@ def stage_module_info(dest_dir: Path, info: UploadFile) -> dict:
                     "info_note": "The datasheet couldn’t be read (is it a scan?). "
                                  "Enter the module name manually."}
         source = found.get("source", "text")
+        # "cec" (name matched) and "cec-specs" (nameplate matched, manufacturer
+        # confirmed in the text) are authoritative. "cec-specs-ambiguous" means
+        # several manufacturers publish these numbers — surface it for checking.
+        authoritative = source in ("cec", "cec-specs")
         out = {"datasheet": rel, "module_name": found["display"],
                "module_specs": found.get("specs") or {}, "info_source": source}
-        if source != "cec":
+        if not authoritative:
             # Read off the sheet's own text rather than matched in the CEC
             # database. Layouts vary enough that the NAME is a guess (the specs
             # are reliable), so it is surfaced as unconfirmed — an engineering
             # report must not silently carry a guessed module model.
-            out["info_note"] = ("Module name read from the datasheet text — please "
-                                "check it. Its specs were read successfully.")
+            if source == "cec-specs-ambiguous":
+                alts = ", ".join(found.get("alternatives", [])[:3])
+                out["info_note"] = (
+                    "Several manufacturers publish these exact nameplate values, so "
+                    "the datasheet's numbers alone can't settle which module this is"
+                    + (f" (e.g. {alts})" if alts else "")
+                    + " — check the name.")
+            else:
+                out["info_note"] = ("Module name read from the datasheet text — please "
+                                    "check it. Its specs were read successfully.")
         return out
     return {"pysam": rel}
 

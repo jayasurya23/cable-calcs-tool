@@ -677,3 +677,15 @@ body.layout-wide .content { max-width: 1560px; }
 .report-preview { margin-top: 20px; }
 .preview-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .pdf-frame { width: 100%; height: 85vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; margin-top: 8px; }
+
+/* Current deliverable, shown at the top of a saved analysis. */
+.deliverable-strip {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  margin: 0 0 14px; padding: 10px 14px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-left: 3px solid var(--ok); border-radius: var(--radius);
+}
+.rev-mini > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.rev-mini-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.rev-mini-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.chip-action { padding: 3px 10px; font-size: 11px; }

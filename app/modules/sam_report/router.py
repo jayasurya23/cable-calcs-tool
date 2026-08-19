@@ -312,6 +312,43 @@ async def remove_datasheet(request: Request, upload_id: str, index: int):
     )
 
 
+@router.post("/report/{upload_id}/module/{index}/library", response_class=HTMLResponse)
+async def module_to_library(request: Request, upload_id: str, index: int):
+    """Save an engineer-verified module into the Module library.
+
+    For a panel the CEC database doesn't carry yet: the datasheet supplied the
+    nameplate values, the engineer confirms the name in the module's label field,
+    and from then on every upload of that module is identified automatically.
+    """
+    _require_upload(upload_id)
+    form = await request.form()
+    report_service.save_labels(upload_id, _labels_from_form(form))
+
+    error = msg = None
+    entries = report_service.load_modules(upload_id)
+    if 0 <= index < len(entries):
+        entry = entries[index]
+        name = str(form.get(f"module_label_{index}", "") or entry.get("label", "")).strip()
+        mfr, _, model = name.partition("—")
+        if not model:                       # a bare name is all model
+            mfr, model = "", name
+        try:
+            saved = await run_in_threadpool(
+                cec_db.add_custom_module_from_specs, mfr, model,
+                entry.get("module_specs") or {})
+            msg = f"Saved “{saved}” to the module library."
+        except ValueError as exc:
+            error = str(exc)
+    else:
+        error = "That module is no longer on this analysis."
+
+    previews, stats = await run_in_threadpool(report_service.modules_preview, upload_id)
+    return templates.TemplateResponse(
+        request, "sam_report/_report_form_modules.html",
+        {"upload_id": upload_id, "modules": report_service.load_modules(upload_id),
+         "previews": previews, "stats": stats, "error": error, "saved_msg": msg})
+
+
 @router.get("/analysis/{analysis_id}", response_class=HTMLResponse)
 def open_analysis(request: Request, analysis_id: int,
                   db: Session = Depends(get_db),
@@ -355,7 +392,18 @@ def open_analysis(request: Request, analysis_id: int,
                            .order_by(Revision.rev_number)).all()
     next_rev = storage.next_rev_number(db, analysis)
     previews, stats = report_service.modules_preview(upload_id)
+    # What this analysis has already issued — so reopening it shows the current
+    # deliverable instead of forcing a trip back to the project page.
+    rev_docs = {}
+    for r in revisions:
+        files = json.loads(r.files_json or "[]")
+        rev_docs[r.id] = {
+            "pdf": next((f for f in files if f.lower().endswith(".pdf")), None),
+            "docx": next((f for f in files if f.lower().endswith(".docx")), None),
+        }
+    latest = revisions[-1] if revisions else None
     return templates.TemplateResponse(request, "sam_report/analysis.html", {
+        "rev_docs": rev_docs, "latest_rev": latest,
         "report": report, "upload_id": upload_id, "project_rec": proj_rec,
         "project": prefill, "analysis": analysis,
         "modules": report_service.load_modules(upload_id),

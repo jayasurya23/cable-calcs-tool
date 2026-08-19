@@ -27,6 +27,39 @@
   </p>
 </section>
 
+{# What this analysis has already issued. Without this, reopening it gave no way
+   to reach the current deliverable — you had to go back to the project page. #}
+{% if latest_rev %}
+{% set ld = rev_docs[latest_rev.id] %}
+<div class="deliverable deliverable-strip">
+  <span class="dl-meta">Current deliverable · <b>R{{ latest_rev.rev_number }}</b>{% if latest_rev.label %} · {{ latest_rev.label }}{% endif %}
+    · filed <time datetime="{{ latest_rev.created_at.isoformat() }}Z" class="js-localdate">{{ latest_rev.created_at.strftime("%Y-%m-%d") }}</time>{% if latest_rev.creator %} by {{ latest_rev.creator.name }}{% endif %}</span>
+  {% if ld.pdf %}
+  <a class="btn btn-primary btn-sm"
+     href="/projects/{{ project_rec.id }}/analysis/{{ analysis.id }}/rev/{{ latest_rev.rev_number }}/{{ ld.pdf | urlencode }}">⬇ PDF</a>
+  {% endif %}
+  {% if ld.docx %}
+  <a class="doc-link"
+     href="/projects/{{ project_rec.id }}/analysis/{{ analysis.id }}/rev/{{ latest_rev.rev_number }}/{{ ld.docx | urlencode }}">Word (.docx)</a>
+  {% endif %}
+  {% if revisions | length > 1 %}
+  <details class="rev-mini">
+    <summary>{{ revisions | length }} revisions</summary>
+    <div class="rev-mini-list">
+      {% for r in revisions | reverse %}
+      {% set d = rev_docs[r.id] %}
+      <div class="rev-mini-row">
+        <b>R{{ r.rev_number }}</b>
+        <span class="dims">{{ r.created_at.strftime("%Y-%m-%d") }}{% if r.label %} · {{ r.label }}{% endif %}</span>
+        {% if d.pdf %}<a class="doc-link" href="/projects/{{ project_rec.id }}/analysis/{{ analysis.id }}/rev/{{ r.rev_number }}/{{ d.pdf | urlencode }}">PDF</a>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
 <section id="report" class="report-slot">
   {% include "sam_report/_report.html" %}
 </section>
