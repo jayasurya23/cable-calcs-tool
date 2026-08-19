@@ -35,3 +35,7 @@ pypdf==6.14.2
 
 # Renders docs/USER_MANUAL.md for the in-app /help page.
 Markdown==3.10.2
+
+# Optional: AI reading of module datasheets (app/modules/sam_report/ai_extract.py).
+# Inert unless ANTHROPIC_API_KEY is set — the feature is off by default.
+anthropic==0.123.0

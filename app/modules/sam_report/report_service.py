@@ -319,7 +319,11 @@ def stage_module_info(dest_dir: Path, info: UploadFile) -> dict:
             # database. Layouts vary enough that the NAME is a guess (the specs
             # are reliable), so it is surfaced as unconfirmed — an engineering
             # report must not silently carry a guessed module model.
-            if source == "cec-specs-ambiguous":
+            if source == "ai":
+                out["info_note"] = ("Read from the datasheet by AI because this module "
+                                    "isn’t in the CEC database — check the name, then "
+                                    "use “Save to library” so it’s recognised next time.")
+            elif source == "cec-specs-ambiguous":
                 alts = ", ".join(found.get("alternatives", [])[:3])
                 out["info_note"] = (
                     "Several manufacturers publish these exact nameplate values, so "

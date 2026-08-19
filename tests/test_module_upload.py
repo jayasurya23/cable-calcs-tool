@@ -173,3 +173,43 @@ def test_prose_is_never_returned_as_a_module_name(tmp_path):
         "25 year warranty")
     assert model == ""
     assert "Module" not in mfr           # never the marketing headline
+
+
+# ── Optional AI datasheet extraction ────────────────────────────────────────
+
+def test_ai_extraction_is_off_without_a_key(monkeypatch):
+    """The feature must be completely inert unless it has been configured, so an
+    unconfigured deployment behaves exactly as it did before."""
+    from app.config import settings
+    from app.modules.sam_report import ai_extract
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    assert ai_extract.is_enabled() is False
+    # …and calling it anyway is a no-op rather than an error.
+    assert ai_extract.extract("does-not-matter.pdf") is None
+
+
+def test_ai_extraction_can_be_switched_off_even_with_a_key(monkeypatch):
+    from app.config import settings
+    from app.modules.sam_report import ai_extract
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test")
+    monkeypatch.setattr(settings, "ai_datasheet_extraction", False)
+    assert ai_extract.is_enabled() is False
+
+
+def test_deterministic_match_never_calls_the_ai(monkeypatch, tmp_path):
+    """Cost and privacy guard: a module the CEC database recognises must be
+    identified locally, without the datasheet leaving the network."""
+    from app.config import settings
+    from app.modules.sam_report import ai_extract, datasheet_parser
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test")
+
+    called = []
+    monkeypatch.setattr(ai_extract, "extract", lambda p: called.append(p))
+
+    pdf = _datasheet_pdf(tmp_path, "known",
+                         "<h1>Qcells North America</h1><h2>Q.PRO-G3 245</h2>"
+                         "<p>Open Circuit Voltage (Voc) 37.56 V</p>"
+                         "<p>Short Circuit Current (Isc) 8.85 A</p>")
+    found = datasheet_parser.identify(pdf)
+    assert found["source"].startswith("cec")
+    assert called == [], "a CEC-identifiable module must not be sent to the AI"

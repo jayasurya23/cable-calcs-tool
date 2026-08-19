@@ -140,7 +140,29 @@ def identify(path) -> dict | None:
                 "params": by_specs["params"], "specs": specs,
                 "alternatives": by_specs.get("alternatives", [])}
 
-    # ── 3. Fall back to whatever the datasheet itself states ──
+    # ── 3. Optional: let Claude read the sheet (off unless a key is configured) ──
+    # Reached only when the CEC database could not identify the module either by
+    # name or by its numbers — i.e. a genuinely unknown panel, or a scan with no
+    # usable text. The answer is a suggestion for the engineer to confirm.
+    from . import ai_extract
+    if ai_extract.is_enabled():
+        ai = ai_extract.extract(path)
+        if ai and ai.get("display"):
+            merged = dict(specs)
+            merged.update(ai.get("specs") or {})
+            # The AI may have read a module the CEC database does carry, on a sheet
+            # whose text defeated us — re-check by the numbers it recovered.
+            by_ai_specs = cec_db.lookup_by_specs(merged, text_hint=ai.get("manufacturer", ""))
+            if by_ai_specs and by_ai_specs["confident"]:
+                m, _, mo = by_ai_specs["display"].partition("—")
+                return {"display": by_ai_specs["display"], "manufacturer": m.strip(),
+                        "model": mo.strip(), "source": "cec-specs",
+                        "params": by_ai_specs["params"], "specs": merged}
+            return {"display": ai["display"], "manufacturer": ai["manufacturer"],
+                    "model": ai["model"], "source": "ai", "params": {},
+                    "specs": merged, "ai_confidence": ai.get("confidence", "")}
+
+    # ── 4. Fall back to whatever the datasheet itself states ──
     mfr, model = _guess_name(text)
     display = f"{mfr} — {model}" if mfr and model else (model or mfr or "")
     return {"display": display, "manufacturer": mfr, "model": model,

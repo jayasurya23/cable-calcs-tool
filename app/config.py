@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # Max upload size in bytes (default 50 MB) — SAM run workbooks can be large.
     max_upload_bytes: int = 50 * 1024 * 1024
 
+    # Optional AI reading of module datasheets. Empty key = feature off, and the
+    # app behaves exactly as it does without it. Only ever invoked when the CEC
+    # database could not identify the module deterministically.
+    anthropic_api_key: str = ""
+    ai_model: str = "claude-opus-5"
+    ai_datasheet_extraction: bool = True
+
     # CORS origins (comma-separated in env, "*" for all during early dev).
     cors_origins: str = "*"
 
