@@ -255,11 +255,16 @@ def load_modules(upload_id: str) -> list[dict]:
     entries: list[dict] = []
     if meta.get("workbook"):
         wattage = _pysam_prefill(dest_dir, meta)["module_wattage"]
-        entries.append({
-            "path": meta["workbook"],
-            "name": meta["workbook"],
-            "label": report_builder.default_module_label(wattage, 0),
-        })
+        entry = {"path": meta["workbook"], "name": meta["workbook"]}
+        # Module 1 may have been given a datasheet instead of a pysam — identify
+        # it the same way the later modules are.
+        if meta.get("datasheet") and not meta.get("pysam"):
+            entry.update(_identify_datasheet(dest_dir, meta["datasheet"]))
+            if entry.get("module_specs", {}).get("pmax"):
+                wattage = int(round(entry["module_specs"]["pmax"]))
+        entry["label"] = (entry.get("module_name")
+                          or report_builder.default_module_label(wattage, 0))
+        entries.append(entry)
         path.write_text(json.dumps(entries), encoding="utf-8")
     return entries
 
@@ -298,44 +303,47 @@ def stage_module_info(dest_dir: Path, info: UploadFile) -> dict:
     service_mod.copy_limited(info.file, dest_dir / rel, what="module info file")
 
     if safe.lower().endswith(".pdf"):
-        from . import datasheet_parser
-        try:
-            found = datasheet_parser.identify(dest_dir / rel)
-        except Exception:  # noqa: BLE001 - a bad PDF must not lose the module
-            found = None
-        if not found or not found.get("display"):
-            return {"datasheet": rel, "module_name": "",
-                    "info_note": "The datasheet couldn’t be read (is it a scan?). "
-                                 "Enter the module name manually."}
-        source = found.get("source", "text")
-        # "cec" (name matched) and "cec-specs" (nameplate matched, manufacturer
-        # confirmed in the text) are authoritative. "cec-specs-ambiguous" means
-        # several manufacturers publish these numbers — surface it for checking.
-        authoritative = source in ("cec", "cec-specs")
-        out = {"datasheet": rel, "module_name": found["display"],
-               "module_specs": found.get("specs") or {}, "info_source": source}
-        if not authoritative:
-            # Read off the sheet's own text rather than matched in the CEC
-            # database. Layouts vary enough that the NAME is a guess (the specs
-            # are reliable), so it is surfaced as unconfirmed — an engineering
-            # report must not silently carry a guessed module model.
-            if source == "ai":
-                out["info_note"] = ("Read from the datasheet by AI because this module "
-                                    "isn’t in the CEC database — check the name, then "
-                                    "use “Save to library” so it’s recognised next time.")
-            elif source == "cec-specs-ambiguous":
-                alts = ", ".join(found.get("alternatives", [])[:3])
-                out["info_note"] = (
-                    "Several manufacturers publish these exact nameplate values, so "
-                    "the datasheet's numbers alone can't settle which module this is"
-                    + (f" (e.g. {alts})" if alts else "")
-                    + " — check the name.")
-            else:
-                out["info_note"] = ("Module name read from the datasheet text — please "
-                                    "check it. Its specs were read successfully.")
-        return out
+        return _identify_datasheet(dest_dir, rel)
     return {"pysam": rel}
 
+
+def _identify_datasheet(dest_dir: Path, rel: str) -> dict:
+    """Identify the module a staged datasheet describes.
+
+    Shared by module 1 (New-analysis page) and the modules added later, so a
+    datasheet behaves identically wherever it is uploaded.
+    """
+    from . import datasheet_parser
+    try:
+        found = datasheet_parser.identify(dest_dir / rel)
+    except Exception:  # noqa: BLE001 - a bad PDF must not lose the module
+        found = None
+    if not found or not found.get("display"):
+        return {"datasheet": rel, "module_name": "",
+                "info_note": "The datasheet couldn't be read (is it a scan?). "
+                             "Enter the module name manually."}
+
+    source = found.get("source", "text")
+    # "cec" (name matched) and "cec-specs" (nameplate matched, manufacturer
+    # confirmed in the text) are authoritative. Anything else is a suggestion.
+    authoritative = source in ("cec", "cec-specs")
+    out = {"datasheet": rel, "module_name": found["display"],
+           "module_specs": found.get("specs") or {}, "info_source": source}
+    if not authoritative:
+        if source == "ai":
+            out["info_note"] = ("Read from the datasheet by AI because this module "
+                                "isn't in the CEC database - check the name, then use "
+                                "“Save to library” so it's recognised next time.")
+        elif source == "cec-specs-ambiguous":
+            alts = ", ".join(found.get("alternatives", [])[:3])
+            out["info_note"] = (
+                "Several manufacturers publish these exact nameplate values, so the "
+                "datasheet's numbers alone can't settle which module this is"
+                + (f" (e.g. {alts})" if alts else "") + " - check the name.")
+        else:
+            out["info_note"] = ("Module name read from the datasheet text - please "
+                                "check it. Its specs were read successfully.")
+    return out
 
 def add_module(upload_id: str, upload: UploadFile, label: str,
                pysam: UploadFile | None = None) -> list[dict]:

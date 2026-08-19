@@ -197,7 +197,15 @@ def process_upload(workbook: UploadFile, pysam: UploadFile | None,
     sheets = parser.preview_workbook(workbook_path)
 
     pysam_path = None
+    datasheet_name = None
     equipment: Equipment | None = None
+    # The field accepts EITHER a pysam JSON or a datasheet PDF. A PDF was
+    # previously fed to the JSON parser, which failed with a decode error and
+    # silently dropped the datasheet — module 1 could not use one at all, while
+    # modules added later could. Route it by extension instead.
+    if pysam is not None and pysam.filename and pysam.filename.lower().endswith(".pdf"):
+        datasheet_name = _stage_upload(pysam, dest_dir).name
+        pysam = None
     if pysam is not None and pysam.filename:
         pysam_path = _stage_upload(pysam, dest_dir)
         try:
@@ -236,6 +244,7 @@ def process_upload(workbook: UploadFile, pysam: UploadFile | None,
         json.dumps({
             "workbook": workbook_path.name,
             "pysam": (pysam_path.name if pysam_path else None),
+            "datasheet": datasheet_name,
             "project_id": project_id,
         }),
         encoding="utf-8",

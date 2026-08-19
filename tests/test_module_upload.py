@@ -283,3 +283,28 @@ def test_a_scanned_pdf_reaches_the_ai_reader(monkeypatch, tmp_path):
     })
     found = datasheet_parser.identify(scan)
     assert found is not None and found["display"] == "Nonesuch — NS-1"
+
+
+def test_module_one_accepts_a_datasheet_not_just_a_pysam(tmp_path, sam_workbook, monkeypatch):
+    """The New-analysis page offers "pysam JSON or datasheet PDF" on module 1, but
+    a PDF there used to be fed to the JSON parser: it failed with a decode error
+    and the datasheet was silently ignored, while modules added later handled one
+    fine. Both paths must behave the same."""
+    from app.config import settings
+    from app.modules.sam_report import service, report_service
+
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    monkeypatch.setattr(settings, "upload_dir", str(uploads))
+
+    pdf = _datasheet_pdf(tmp_path, "m1",
+                         "<h1>Qcells North America</h1><h2>Q.PRO-G3 245</h2>"
+                         "<p>Open Circuit Voltage (Voc) 37.56 V</p>")
+    report = service.process_upload(_Upload(sam_workbook), _Upload(pdf), project_id=1)
+
+    assert not any("pysam" in w.lower() for w in report.warnings), report.warnings
+    entry = report_service.load_modules(report.upload_id)[0]
+    assert entry.get("datasheet")
+    assert "Qcells North America" in entry["module_name"]
+    module = report_service._build_modules(report.upload_id, {})[0]
+    assert "Qcells North America" in module.module_model
