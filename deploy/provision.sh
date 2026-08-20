@@ -206,7 +206,11 @@ az containerapp secret set -g "$RG" -n "$APP" --secrets "${SECRETS[@]}" -o none
 # FQDN exists once ingress is created; use it for the Entra redirect URI so M365
 # sign-in doesn't fall back to the localhost default.
 FQDN=$(az containerapp show -g "$RG" -n "$APP" --query 'properties.configuration.ingress.fqdn' -o tsv)
-REDIRECT_URI="https://${FQDN}/auth/callback"
+# Once a custom domain is bound, sign-in must return the user THERE — otherwise
+# Entra bounces them back to the azurecontainerapps.io URL after authenticating
+# and they end up on the old address. Falls back to the default FQDN when unset.
+SITE_HOST="${CUSTOM_DOMAIN:-$FQDN}"
+REDIRECT_URI="https://${SITE_HOST}/auth/callback"
 
 # Always-meaningful vars. Possibly-empty ones (admin/entra) are added only when set,
 # so we never pass a bare "KEY=" to --set-env-vars.
