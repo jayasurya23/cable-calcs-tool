@@ -689,3 +689,53 @@ body.layout-wide .content { max-width: 1560px; }
 .rev-mini-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .rev-mini-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .chip-action { padding: 3px 10px; font-size: 11px; }
+
+/* ── Module library: the modules we maintain ───────────────────────── */
+.lib-rows { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.lib-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(0, 1.6fr) auto;
+  gap: 14px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px 14px;
+}
+.lib-row:hover { border-color: #454545; }
+.lib-main { min-width: 0; }
+.lib-name { font-weight: 600; font-size: 14px; word-break: break-word; }
+.lib-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  color: var(--muted); font-size: 12px; margin-top: 5px;
+}
+.lib-dot { color: #555; }
+.lib-notes { color: var(--muted); font-size: 12px; margin-top: 6px; font-style: italic; }
+.lib-specs { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.lib-actions { display: flex; align-items: center; gap: 8px; }
+
+.lib-empty {
+  background: var(--panel); border: 1px dashed var(--line);
+  border-radius: var(--radius); padding: 22px; margin-top: 12px;
+}
+.lib-empty p { margin: 0 0 8px; }
+.lib-empty .btn { margin-top: 6px; }
+
+/* The edit form replaces its row in place, so it spans the full width. */
+.lib-editing { display: block; border-color: var(--crimson); }
+.lib-edit-head { margin-bottom: 12px; font-size: 14px; }
+.lib-edit-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px;
+}
+
+.ds-result { margin-top: 14px; }
+.ds-result .notice-ok, .ds-result .warning { margin: 0 0 10px; }
+
+@media (max-width: 860px) {
+  .lib-row { grid-template-columns: 1fr; }
+  .lib-actions { justify-content: flex-end; }
+}
+
+/* A row whose module was deleted by someone else while the page was open. */
+.lib-row-gone { border-style: dashed; opacity: .75; }
+.lib-row-gone .lib-name { color: var(--muted); font-weight: 500; }
+/* Where an add reports back, inside the Add tab. */
+.add-notice:not(:empty) { margin-bottom: 14px; }
+.add-notice .notice-ok, .add-notice .warning { margin: 0; }

@@ -1,0 +1,46 @@
+{# Inline edit of one library entry. Cancel re-fetches the read-only row. #}
+<form class="lib-row lib-editing" id="mod-{{ m.id }}"
+      hx-post="/sam/modules/{{ m.id }}"
+      hx-target="#modules-list" hx-swap="outerHTML">
+  <div class="lib-edit-head">
+    <b>Editing</b> <span class="hint">{{ m.display }}</span>
+  </div>
+
+  <div class="form-grid">
+    <label>Manufacturer
+      <input name="manufacturer" value="{{ m.manufacturer }}" placeholder="e.g. Canadian Solar"></label>
+    <label>Model
+      <input name="model" value="{{ m.model }}" required placeholder="e.g. CS7N-660MS"></label>
+    <label>Rated power <span class="opt">(W)</span>
+      <input name="pmax" type="number" step="any" min="0"
+             value="{{ m.pmax_w | round | int if m.pmax_w else '' }}" placeholder="e.g. 660"></label>
+  </div>
+
+  {% if m.editable_specs %}
+    <p class="hint" style="margin-top:12px">These nameplate values are how this module is
+      recognised on a later datasheet upload. Correct them against the sheet if they were
+      misread — keep at least three.</p>
+    <div class="form-grid">
+      {% for f in m.spec_fields %}
+        <label>{{ f.label }} <span class="opt">({{ f.unit }})</span>
+          <input name="{{ f.key }}" type="number" step="any" min="0"
+                 value="{{ '%.2f' | format(f.value) if f.value is not none else '' }}"></label>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="hint" style="margin-top:12px">This module is matched on the full CEC 6-parameter set
+      from its pysam, which is exact — there are no values to hand-edit. To re-key it, delete it
+      and add it again from the corrected pysam.</p>
+  {% endif %}
+
+  <label class="field-full" style="margin-top:12px">Notes <span class="opt">(optional)</span>
+    <input name="notes" value="{{ m.notes | default('', true) }}"
+           placeholder="e.g. verified against Rev C datasheet, Jan 2026"></label>
+
+  <div class="lib-edit-actions">
+    <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+    <button class="btn btn-secondary btn-sm" type="button"
+            hx-get="/sam/modules/{{ m.id }}/row"
+            hx-target="#mod-{{ m.id }}" hx-swap="outerHTML">Cancel</button>
+  </div>
+</form>

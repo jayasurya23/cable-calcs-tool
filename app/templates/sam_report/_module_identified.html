@@ -1,0 +1,112 @@
+{# What we made of an uploaded datasheet. Nothing is saved until the engineer confirms. #}
+{% if error %}
+  <div class="warning" style="margin-top:14px">⚠ {{ error }}</div>
+
+{% elif not found %}
+  <div class="warning" style="margin-top:14px">
+    <b>Couldn’t read {{ filename }}.</b>
+    {% if ai.enabled %}
+      Neither the CEC database nor {{ ai.model }} could identify a module in it — check it’s a
+      module datasheet and not a warranty or installation document.
+    {% else %}
+      There’s no selectable text in it, so it’s probably a scan. AI reading is off, so it can’t
+      be read automatically — use the <b>By hand</b> section below to type the values off the
+      sheet, or add the module from its pysam JSON.
+    {% endif %}
+  </div>
+
+{% else %}
+  {% set specs = found.specs or {} %}
+  {% set present = [] %}
+  {% for key, label, unit in spec_fields %}
+    {% if specs.get(key) is not none %}{% set _ = present.append(key) %}{% endif %}
+  {% endfor %}
+
+  <div class="ds-result">
+    {# ── what happened, in plain terms ───────────────────────────────── #}
+    {# An entry of our own outranks the CEC database at match time, so when one
+       already exists that is the fact that matters — say it first rather than
+       announcing a database match the library would override anyway. #}
+    {% if already %}
+      <div class="warning">⚠ <b>“{{ already }}” is already in our library.</b> Saving again
+        replaces it when the nameplate values are unchanged. If you meant to correct it, cancel
+        and use <b>Edit</b> on it under <b>Our modules</b> instead.</div>
+    {% elif found.source == 'cec' %}
+      <div class="notice-ok">✓ <b>Already in the CEC database</b> — matched by name from
+        {{ filename }}. Reports name this module automatically; you only need to add it here to
+        override that name.</div>
+    {% elif found.source == 'cec-specs' %}
+      <div class="notice-ok">✓ <b>Already in the CEC database</b> — the name wasn’t readable, but
+        its nameplate numbers match one module exactly. Add it here only to override the name.</div>
+    {% elif found.source == 'cec-specs-ambiguous' %}
+      <div class="warning">⚠ <b>Several modules share these nameplate numbers.</b> One panel is
+        often sold under multiple brands. Check the datasheet and correct the name below before
+        saving.</div>
+    {% elif found.source == 'ai' %}
+      <div class="notice-ok">✓ <b>Read by {{ ai.model }}</b> — this module isn’t in the CEC
+        database, so the sheet was read directly.
+        {% if found.ai_confidence == 'low' %}
+          <b>It reported low confidence</b>, so check every value against the datasheet.
+        {% else %}
+          Check the values against the datasheet before saving.
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="warning">⚠ <b>Not identified.</b> This module isn’t in the CEC database and the
+        sheet’s layout defeated automatic reading. What we could scrape is below — correct it
+        against the datasheet before saving.</div>
+    {% endif %}
+
+    {% if found.alternatives %}
+      <p class="hint" style="margin-top:10px"><b>Also matching these numbers:</b>
+        {{ found.alternatives | join(' · ') }}</p>
+    {% endif %}
+
+    {# ── confirm and save ────────────────────────────────────────────── #}
+    <form hx-post="/sam/modules/add-datasheet"
+          hx-target="#add-result" hx-swap="innerHTML" style="margin-top:14px">
+      <input type="hidden" name="source" value="{{ found.source }}">
+
+      <div class="form-grid">
+        <label>Manufacturer
+          <input name="manufacturer" value="{{ found.manufacturer }}"
+                 placeholder="e.g. Canadian Solar"></label>
+        <label>Model
+          <input name="model" value="{{ found.model }}" required
+                 placeholder="e.g. CS7N-660MS"></label>
+        <label>Rated power <span class="opt">(W)</span>
+          <input name="pmax" type="number" step="any" min="0"
+                 value="{{ specs.get('pmax') | round | int if specs.get('pmax') else '' }}"></label>
+      </div>
+
+      <p class="hint" style="margin-top:12px">
+        These nameplate values are how this module gets recognised the next time someone uploads
+        its datasheet.
+        {% if present | length < 3 %}
+          <b>At least three are needed</b> — {{ present | length }} could be read, so fill in the
+          rest from the sheet.
+        {% endif %}
+      </p>
+      <div class="form-grid">
+        {% for key, label, unit in spec_fields %}
+          <label>{{ label }} <span class="opt">({{ unit }})</span>
+            <input name="{{ key }}" type="number" step="any" min="0"
+                   value="{{ '%.2f' | format(specs.get(key)) if specs.get(key) is not none else '' }}"
+                   {% if specs.get(key) is none %}placeholder="read it off the sheet"{% endif %}></label>
+        {% endfor %}
+      </div>
+
+      <div class="lib-edit-actions">
+        <button class="btn btn-primary btn-sm" type="submit">
+          {% if found.source in ('cec', 'cec-specs') and not already %}Add anyway, overriding the name{% else %}Add to our library{% endif %}
+        </button>
+        {# Dismiss a proposal that was the wrong file, so the panel isn't stuck
+           showing it — re-picking the same PDF is otherwise a no-op. #}
+        <button class="btn btn-secondary btn-sm" type="button"
+                hx-get="/sam/modules/blank" hx-target="#ds-result" hx-swap="innerHTML">
+          Discard</button>
+        <span class="hint">from {{ filename }}</span>
+      </div>
+    </form>
+  </div>
+{% endif %}

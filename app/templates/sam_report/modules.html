@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Module library — Cable Web{% endblock %}
+{% block body_class %}layout-wide{% endblock %}
 
 {% block breadcrumb %}
 <nav class="breadcrumb">
@@ -11,51 +12,153 @@
 {% block content %}
 <section class="page-head">
   <h1>Module library</h1>
-  <p class="subtitle">The CEC module database used to name modules in reports as
-    <b>Manufacturer — Model</b>, matched from each module’s pysam JSON.</p>
+  <p class="subtitle">Modules are named <b>Manufacturer — Model</b> in every report. Names come
+    from the CEC database first; anything it doesn’t carry lives here, in the list we maintain.</p>
 </section>
 
-{% if msg %}<div class="notice-ok">✓ {{ msg }}</div>{% endif %}
-{% if error %}<div class="warning">⚠ {{ error }}</div>{% endif %}
+{% if page_msg %}<div class="notice-ok">✓ {{ page_msg }}</div>{% endif %}
+{% if page_error %}<div class="warning">⚠ {{ page_error }}</div>{% endif %}
 
 <div class="derived-stats">
-  <span class="chip"><b>Modules</b> {{ "{:,}".format(stats.module_count) }}</span>
+  <span class="chip"><b>CEC database</b> {{ "{:,}".format(stats.module_count) }}</span>
   <span class="chip"><b>Source</b> {{ stats.source }}</span>
-  <span class="chip"><b>Cache age</b>
-    {% if stats.cache_age_days is not none %}{{ stats.cache_age_days }} d{% else %}bundled{% endif %}</span>
-  <span class="chip"><b>Custom</b> {{ stats.custom_count }}</span>
+  <span class="chip"><b>Updated</b>
+    {% if stats.cache_age_days is not none %}{{ stats.cache_age_days }} d ago{% else %}bundled copy{% endif %}</span>
+  <span class="chip" id="lib-count-chip"><b>Ours</b> {{ stats.custom_count }}</span>
+  {% if ai.enabled %}
+    <span class="chip chip-ok"><b>AI reader</b> {{ ai.model }}</span>
+  {% else %}
+    <span class="chip chip-dim"><b>AI reader</b> off</span>
+  {% endif %}
 </div>
 
-<div style="margin:14px 0">
-  <form method="post" action="/sam/modules/refresh" style="display:inline">
-    <button class="btn btn-secondary btn-sm" type="submit">↻ Refresh from NREL now</button>
-  </form>
-  <span class="hint" style="margin-left:8px">Auto-updates from NREL’s SAM library in the background when older than 7 days.</span>
-</div>
-
-<h3>Add a custom module</h3>
-<p class="hint">For a module not yet in the CEC database. Upload its pysam JSON (so the tool can
-  match it by parameters), and enter the name to show. Custom modules take precedence over the DB.</p>
-<form method="post" action="/sam/modules/add" enctype="multipart/form-data"
-      class="form-grid" style="align-items:end;max-width:720px">
-  <label>Manufacturer<input name="manufacturer" placeholder="e.g. Canadian Solar"></label>
-  <label>Model<input name="model" placeholder="e.g. CS7N-660MS" required></label>
-  <label>pysam JSON<input type="file" name="pysam" accept=".json" required></label>
-  <button class="btn btn-primary btn-sm" type="submit" style="margin-bottom:2px">+ Add module</button>
-</form>
-
-{% if custom %}
-<h3 style="margin-top:22px">Custom modules</h3>
-<div class="module-rows">
-  {% for c in custom %}
-  <div class="module-row">
-    <span class="module-idx">{{ loop.index }}</span>
-    <span class="module-file">📄 {{ c.display }}</span>
-    <form method="post" action="/sam/modules/remove/{{ loop.index0 }}" style="margin-left:auto">
-      <button class="btn-remove" title="Remove custom module" type="submit">&times;</button>
-    </form>
+<div class="js-tabs" data-active-tab="ours">
+  <div class="tabbar" role="tablist" aria-label="Module library">
+    <button class="tab tab-active" type="button" role="tab" aria-selected="true"
+            data-tab-target="ours">Our modules
+      <b id="lib-count">{{ stats.custom_count }}</b></button>
+    <button class="tab" type="button" role="tab" aria-selected="false" tabindex="-1"
+            data-tab-target="add">Add a module</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" tabindex="-1"
+            data-tab-target="browse">CEC database</button>
   </div>
-  {% endfor %}
+
+  {# ── Our modules: view / edit / delete ───────────────────────────── #}
+  <div data-tab-panel="ours" role="tabpanel">
+    {% include "sam_report/_modules_list.html" %}
+  </div>
+
+  {# ── Add a module ────────────────────────────────────────────────── #}
+  <div data-tab-panel="add" role="tabpanel" hidden>
+    {# Where every add reports back. Lives in THIS panel so the engineer sees
+       the result without switching tabs. #}
+    <div id="add-result"></div>
+
+    <div class="form-section">
+      <h4>From a datasheet</h4>
+      <p class="hint">Drop the manufacturer’s PDF. We try to match it against the CEC database
+        by name, then by its nameplate numbers{% if ai.enabled %}, and if neither places it,
+        {{ ai.model }} reads the sheet{% endif %} — including a scan with no selectable text.
+        Nothing is saved until you confirm what it found.</p>
+
+      {% if not ai.enabled %}
+      <p class="hint" style="margin-top:8px">⚠ AI reading is off (no API key configured), so an
+        image-only scan can’t be read. Name and nameplate matching still work, and you can always
+        use <b>By hand</b> below.</p>
+      {% endif %}
+
+      <div class="js-ds-dropzone dropzone" tabindex="0" role="button" style="margin-top:12px"
+           aria-label="Read a datasheet PDF — drop it here or click to browse">
+        <input type="file" id="ds-file-picker" name="datasheet" accept="application/pdf,.pdf" hidden
+               hx-post="/sam/modules/identify" hx-trigger="change"
+               hx-target="#ds-result" hx-swap="innerHTML"
+               hx-encoding="multipart/form-data" hx-indicator="#ds-spin">
+        <div class="dz-inner">
+          <span class="dz-icon" aria-hidden="true">⬆</span>
+          <span class="dz-copy">
+            <span class="dz-title">Read a datasheet</span>
+            <span class="dz-sub">Drop one PDF here or click to browse</span>
+          </span>
+          <span id="ds-spin" class="htmx-indicator spinner" style="margin-left:10px">Reading…</span>
+        </div>
+      </div>
+      <div id="ds-result"></div>
+    </div>
+
+    <div class="form-section">
+      <h4>By hand</h4>
+      <p class="hint">When there’s no datasheet to read — or the sheet is a scan and AI reading is
+        off — type the nameplate values straight off the sheet. At least three of the four are
+        needed: they’re what lets us recognise this module on a later upload.</p>
+      <form hx-post="/sam/modules/add-datasheet" hx-target="#add-result" hx-swap="innerHTML">
+        <input type="hidden" name="source" value="manual">
+        <div class="form-grid">
+          <label>Manufacturer<input name="manufacturer" placeholder="e.g. Canadian Solar"></label>
+          <label>Model<input name="model" required placeholder="e.g. CS7N-660MS"></label>
+          <label>Rated power <span class="opt">(W)</span>
+            <input name="pmax" type="number" step="any" min="0" placeholder="e.g. 660"></label>
+        </div>
+        <div class="form-grid" style="margin-top:10px">
+          <label>Voc <span class="opt">(V)</span>
+            <input name="voc" type="number" step="any" min="0"></label>
+          <label>Isc <span class="opt">(A)</span>
+            <input name="isc" type="number" step="any" min="0"></label>
+          <label>Vmp <span class="opt">(V)</span>
+            <input name="vmp" type="number" step="any" min="0"></label>
+          <label>Imp <span class="opt">(A)</span>
+            <input name="imp" type="number" step="any" min="0"></label>
+        </div>
+        <div class="lib-edit-actions">
+          <button class="btn btn-primary btn-sm" type="submit">Add to our library</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="form-section">
+      <h4>From a pysam JSON</h4>
+      <p class="hint">When you have the module’s pysam export, it carries the full CEC
+        6-parameter set — the most precise way to match it on later uploads.</p>
+      <form hx-post="/sam/modules/add" hx-target="#add-result" hx-swap="innerHTML"
+            hx-encoding="multipart/form-data" class="form-grid"
+            style="align-items:end;max-width:820px">
+        <label>Manufacturer<input name="manufacturer" placeholder="e.g. Canadian Solar"></label>
+        <label>Model<input name="model" placeholder="e.g. CS7N-660MS" required></label>
+        <label>pysam JSON<input type="file" name="pysam" accept=".json" required></label>
+        <button class="btn btn-primary btn-sm" type="submit" style="margin-bottom:2px">Add module</button>
+      </form>
+    </div>
+  </div>
+
+  {# ── Browse the CEC database ─────────────────────────────────────── #}
+  <div data-tab-panel="browse" role="tabpanel" hidden>
+    <div class="form-section">
+      <h4>Search the CEC database</h4>
+      <p class="hint">{{ "{:,}".format(stats.module_count) }} modules from NREL’s SAM library.
+        Read-only — it’s replaced wholesale on each refresh, so corrections belong in
+        <b>Our modules</b>, which always takes precedence.</p>
+      <p class="hint">Heads-up: it lists manufacturers by their <b>legal entity name</b>, which
+        is often not the brand. Canadian Solar is filed as <b>CSI Solar Co. Ltd.</b>, Qcells as
+        <b>Hanwha Qcells</b> — so searching the model number (<b>CS7N</b>) finds it when the
+        brand name doesn’t. That mismatch is exactly what <b>Our modules</b> is for: add an entry
+        there to make reports show the name your client actually uses.</p>
+
+      <div class="list-toolbar">
+        <input class="auth-input" type="search" id="cec-search" name="q" autocomplete="off"
+               placeholder="Search by model or manufacturer — e.g. “CS7N” or “qcells 400”"
+               hx-get="/sam/modules/search"
+               hx-trigger="keyup changed delay:250ms, search"
+               hx-target="#cec-results" hx-swap="innerHTML" hx-indicator="#cec-spin">
+        <span id="cec-spin" class="htmx-indicator spinner">Searching…</span>
+      </div>
+
+      <div id="cec-results">
+        <p class="hint" style="margin-top:14px">Type to search.</p>
+      </div>
+    </div>
+
+    <div class="form-section" id="db-status">
+      {% include "sam_report/_modules_dbstatus.html" %}
+    </div>
+  </div>
 </div>
-{% endif %}
 {% endblock %}

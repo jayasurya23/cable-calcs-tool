@@ -1,0 +1,46 @@
+{# CEC database search results (HTMX fragment). #}
+{% if not result.query %}
+  <p class="hint" style="margin-top:14px">Type to search
+    {{ "{:,}".format(result.total) }} modules.</p>
+
+{% elif not result.rows %}
+  <p class="hint" style="margin-top:14px">
+    Nothing matches <b>{{ result.query }}</b>. Every word has to appear in the name — try fewer
+    terms. If the module genuinely isn’t here, add it under <b>Add a module</b>.</p>
+
+{% else %}
+  <p class="hint" style="margin:14px 0 8px">
+    {{ "{:,}".format(result.matched) }} match{{ '' if result.matched == 1 else 'es' }} for
+    <b>{{ result.query }}</b>{% if result.truncated %} — showing the first
+    {{ result.rows | length }}, narrow the search to see the rest{% endif %}.</p>
+
+  <div class="table-wrap table-output">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Manufacturer</th><th>Model</th>
+          <th style="text-align:right">Pmax</th>
+          <th style="text-align:right">Voc</th>
+          <th style="text-align:right">Isc</th>
+          <th style="text-align:right">Vmp</th>
+          <th style="text-align:right">Imp</th>
+          <th style="text-align:right">Cells</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in result.rows %}
+        <tr>
+          <td>{{ r.manufacturer }}</td>
+          <td>{{ r.model }}</td>
+          <td style="text-align:right">{{ r.pmax if r.pmax else '—' }} W</td>
+          <td style="text-align:right">{{ "%.2f" | format(r.voc) if r.voc else '—' }}</td>
+          <td style="text-align:right">{{ "%.2f" | format(r.isc) if r.isc else '—' }}</td>
+          <td style="text-align:right">{{ "%.2f" | format(r.vmp) if r.vmp else '—' }}</td>
+          <td style="text-align:right">{{ "%.2f" | format(r.imp) if r.imp else '—' }}</td>
+          <td style="text-align:right">{{ r.cells if r.cells else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}

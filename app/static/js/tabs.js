@@ -59,6 +59,18 @@
     activate(tabRoot(btn), btn.getAttribute("data-tab-target"));
   });
 
+  // A control that jumps to a tab without BEING one (e.g. an empty-state
+  // "Add a module" button). Kept separate from [data-tab-target] so it is not
+  // swept into the tablist's active-class / roving-tabindex bookkeeping, which
+  // would otherwise leave it unreachable by keyboard.
+  document.addEventListener("click", function (e) {
+    var go = e.target.closest && e.target.closest("[data-goto-tab]");
+    if (!go || go.disabled) return;
+    e.preventDefault();
+    activate(tabRoot(go) || document.querySelector(".js-tabs"),
+             go.getAttribute("data-goto-tab"));
+  });
+
   // Left/Right arrows move between tabs (standard tablist behaviour).
   document.addEventListener("keydown", function (e) {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;

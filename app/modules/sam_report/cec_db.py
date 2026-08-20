@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import threading
 import time
 import urllib.request
+import uuid
 from pathlib import Path
 
 from app.config import settings
@@ -42,6 +44,10 @@ _PYSAM_KEYS = {
 }
 
 _lock = threading.Lock()
+# Guards read-modify-write of custom_modules.json. In-process only: with several
+# gunicorn workers two simultaneous edits could still race, so writes are atomic
+# (temp + os.replace) and the file is never left half-written.
+_custom_lock = threading.RLock()
 _cache: dict | None = None          # {"index": {...}, "source": str, "mtime": float}
 _refreshing = False
 
@@ -78,6 +84,22 @@ def _round_key(p: dict) -> tuple:
             round(p["V_oc_ref"], 2), round(p["I_sc_ref"], 2), int(round(p["N_s"])))
 
 
+def _entry_key(entry: dict) -> tuple | None:
+    """The match key of a stored custom entry, or None when it has no CEC
+    parameter set.
+
+    Datasheet-derived entries are keyed on nameplate values and carry
+    `params == {}`, so calling _round_key on them raises KeyError. Every loop
+    over the custom list must go through here: a single such entry used to make
+    lookup_module_name blow up for EVERY report, not just its own.
+    """
+    params = entry.get("params") or {}
+    try:
+        return _round_key(params)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _parse_csv(path: Path) -> dict:
     """Index the CEC CSV -> {rounded-key: [(display, params), …]}. The NREL CSV
     has 3 header rows (names / units / SAM-var map), then data."""
@@ -105,14 +127,33 @@ def _parse_csv(path: Path) -> dict:
     return index
 
 
-def _load_custom() -> list[dict]:
+class LibraryUnavailable(RuntimeError):
+    """The custom-module file exists but could not be read this time."""
+
+
+def _load_custom(strict: bool = False) -> list[dict]:
+    """The engineer-maintained module list.
+
+    `strict` decides what an unreadable file means. On a READ path (naming a
+    module for a report) the answer is "carry on without custom names" — a
+    transient SMB blip on the Azure Files mount must not fail a report. On a
+    WRITE path it must raise: treating a failed read as "the library is empty"
+    and then saving would persist that emptiness, destroying every entry the
+    engineers had added.
+    """
     p = _custom_json()
-    if p.is_file():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            return []
-    return []
+    if not p.is_file():
+        return []                       # genuinely empty — safe to write over
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        if strict:
+            raise LibraryUnavailable(
+                "The module library file could not be read, so it can't be "
+                "changed right now without risking the entries already in it. "
+                "Try again in a moment.") from exc
+        return []
+    return data if isinstance(data, list) else []
 
 
 def _active_source() -> Path:
@@ -167,7 +208,7 @@ def lookup_module_name(pysam_data: dict) -> str | None:
     key = _round_key(params)
     # 1. custom modules first
     custom_hits = [(c["display"], c["params"]) for c in _load_custom()
-                   if _round_key(c["params"]) == key]
+                   if _entry_key(c) == key]
     if custom_hits:
         return _best(custom_hits, params)
     # 2. the base DB (exact rounded key)
@@ -191,34 +232,131 @@ def lookup_module_name(pysam_data: dict) -> str | None:
 
 # ─── custom modules ──────────────────────────────────────────────────────────
 
+def _save_custom(entries: list[dict]) -> None:
+    """Write the list atomically under a name no other writer can collide with.
+
+    A single shared "custom_modules.json.tmp" was not safe: the app runs two
+    gunicorn workers across up to three replicas, all writing the same Azure
+    Files share, so two overlapping saves interleaved their bytes in one temp
+    file and then both renamed it over the real one. Per-writer temp names plus
+    os.replace make each save all-or-nothing.
+    """
+    path = _custom_json()
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        tmp.write_text(json.dumps(entries, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:
+        tmp.unlink(missing_ok=True)     # never leave a half-written temp behind
+        raise
+
+
+def _ensure_ids(entries: list[dict]) -> bool:
+    """Give every entry a stable id. Entries were originally addressed by list
+    position, which breaks the moment two people edit at once (or one deletes
+    while another is on the edit form). Ids are assigned lazily on first read;
+    returns True when something changed and the list needs writing back."""
+    changed = False
+    for e in entries:
+        if not e.get("id"):
+            e["id"] = uuid.uuid4().hex[:10]
+            changed = True
+        if not e.get("kind"):
+            e["kind"] = "params"        # the original, pysam-parameter-keyed form
+            changed = True
+    return changed
+
+
+def custom_modules() -> list[dict]:
+    """Every engineer-added module, each with a stable `id` and a `kind`."""
+    with _custom_lock:
+        try:
+            entries = _load_custom(strict=True)
+        except LibraryUnavailable:
+            return []                   # display-only caller: show nothing, write nothing
+        if _ensure_ids(entries):
+            _save_custom(entries)
+        return entries
+
+
+def get_custom_module(module_id: str) -> dict | None:
+    for e in custom_modules():
+        if e.get("id") == module_id:
+            return e
+    return None
+
+
+def _compose(manufacturer: str, model: str) -> tuple[str, str, str]:
+    manufacturer, model = (manufacturer or "").strip(), (model or "").strip()
+    if not model:
+        raise ValueError("Enter the module model name.")
+    return manufacturer, model, (f"{manufacturer} — {model}" if manufacturer else model)
+
+
 def add_custom_module(manufacturer: str, model: str, pysam_data: dict) -> str:
     """Remember a module by its pysam params under 'Manufacturer — Model'. Future
     reports whose module matches these params auto-fill this name."""
     params = _pysam_params(pysam_data)
     if params is None:
         raise ValueError("That pysam JSON has no CEC module parameters to match on.")
-    manufacturer, model = manufacturer.strip(), model.strip()
-    if not model:
-        raise ValueError("Enter the module model name.")
-    display = f"{manufacturer} — {model}" if manufacturer else model
-    entries = _load_custom()
-    key = _round_key(params)
-    entries = [e for e in entries if _round_key(e["params"]) != key]  # replace same-key
-    entries.append({"display": display, "manufacturer": manufacturer,
-                    "model": model, "params": params})
-    _custom_json().write_text(json.dumps(entries), encoding="utf-8")
+    manufacturer, model, display = _compose(manufacturer, model)
+    with _custom_lock:
+        entries = _load_custom(strict=True)
+        _ensure_ids(entries)
+        key = _round_key(params)
+        entries = [e for e in entries if _entry_key(e) != key]
+        entries.append({"id": uuid.uuid4().hex[:10], "display": display,
+                        "manufacturer": manufacturer, "model": model,
+                        "kind": "params", "params": params, "specs": {}})
+        _save_custom(entries)
     return display
 
 
-def custom_modules() -> list[dict]:
-    return _load_custom()
+def update_custom_module(module_id: str, manufacturer: str, model: str,
+                         specs: dict | None = None, pmax_w=None,
+                         notes: str = "") -> str:
+    """Edit an existing custom module in place, keeping its id.
+
+    The name can always be corrected. The nameplate values can be corrected too,
+    but ONLY for a specs-keyed entry: for a params-keyed one the CEC 6-parameter
+    set is the match key and came from a pysam, so there is nothing meaningful to
+    hand-edit — changing it by hand would silently break matching.
+    """
+    manufacturer, model, display = _compose(manufacturer, model)
+    with _custom_lock:
+        entries = _load_custom(strict=True)
+        _ensure_ids(entries)
+        for e in entries:
+            if e.get("id") != module_id:
+                continue
+            e["manufacturer"], e["model"], e["display"] = manufacturer, model, display
+            e["notes"] = (notes or "").strip()
+            if pmax_w not in (None, ""):
+                n = _number(pmax_w, 100_000)     # W; a module is ~200-800
+                if n is not None:
+                    e["pmax_w"] = n
+            if specs is not None and e.get("kind") == "specs":
+                wanted = _wanted_specs(specs)
+                if len(wanted) < 3:
+                    raise ValueError(
+                        "Keep at least three of Voc, Isc, Vmp and Imp — they are "
+                        "what identifies this module on a later upload.")
+                e["specs"] = wanted
+            _save_custom(entries)
+            return display
+    raise ValueError("That module is no longer in the library — it may have been removed.")
 
 
-def remove_custom_module(index: int) -> None:
-    entries = _load_custom()
-    if 0 <= index < len(entries):
-        entries.pop(index)
-        _custom_json().write_text(json.dumps(entries), encoding="utf-8")
+def remove_custom_module(module_id: str) -> bool:
+    """Delete by stable id. Returns False if it was already gone."""
+    with _custom_lock:
+        entries = _load_custom(strict=True)
+        _ensure_ids(entries)
+        keep = [e for e in entries if e.get("id") != module_id]
+        if len(keep) == len(entries):
+            return False
+        _save_custom(keep)
+        return True
 
 
 # ─── refresh from NREL ───────────────────────────────────────────────────────
@@ -284,6 +422,70 @@ def stats() -> dict:
     }
 
 
+# ─── browsing the database ───────────────────────────────────────────────────
+
+_flat_cache: dict | None = None
+
+
+def _flat() -> list[tuple]:
+    """The whole database as a flat, name-sorted list for browsing/searching.
+
+    Built once per source file and memoised alongside the match index — the CSV
+    is ~30k rows, so rebuilding it per keystroke would be wasteful, while a
+    single pass over the cached list is instant.
+    Each item: (haystack, display, manufacturer, model, params).
+    """
+    global _flat_cache
+    src = _active_source()
+    mtime = src.stat().st_mtime if src.is_file() else 0.0
+    with _lock:
+        if _flat_cache is not None and _flat_cache["mtime"] == mtime                 and _flat_cache["source"] == str(src):
+            return _flat_cache["rows"]
+
+    rows = []
+    for bucket in _get_index().values():
+        for display, params in bucket:
+            mfr, _, model = display.partition("—")
+            rows.append((display.lower(), display, mfr.strip(), model.strip(), params))
+    rows.sort(key=lambda r: r[0])
+
+    with _lock:
+        _flat_cache = {"rows": rows, "source": str(src), "mtime": mtime}
+    return rows
+
+
+def _row_view(display: str, mfr: str, model: str, params: dict) -> dict:
+    """One database row shaped for the browse table."""
+    vmp, imp = params.get("V_mp_ref"), params.get("I_mp_ref")
+    return {
+        "display": display, "manufacturer": mfr, "model": model,
+        "voc": params.get("V_oc_ref"), "isc": params.get("I_sc_ref"),
+        "vmp": vmp, "imp": imp,
+        "cells": int(params["N_s"]) if params.get("N_s") else None,
+        "pmax": (round(vmp * imp) if vmp and imp else None),
+    }
+
+
+def search_modules(query: str, limit: int = 50) -> dict:
+    """Name search across the CEC database.
+
+    Every whitespace-separated term must appear, so "qcells 400" narrows the way
+    a person expects rather than returning everything matching either word.
+    """
+    terms = [t for t in (query or "").lower().split() if t]
+    rows = _flat()
+    if not terms:
+        return {"rows": [], "total": len(rows), "matched": 0, "query": "", "truncated": False}
+
+    hits = [r for r in rows if all(t in r[0] for t in terms)]
+    shown = hits[:limit]
+    return {
+        "rows": [_row_view(d, mf, mo, pa) for _, d, mf, mo, pa in shown],
+        "total": len(rows), "matched": len(hits), "query": query.strip(),
+        "truncated": len(hits) > limit,
+    }
+
+
 # ─── identify from nameplate specs (no name needed) ──────────────────────────
 
 # Datasheets round their published values, so match on a tolerance rather than
@@ -291,6 +493,46 @@ def stats() -> dict:
 _SPEC_TOL = {"V_oc_ref": 0.30, "I_sc_ref": 0.15, "V_mp_ref": 0.30, "I_mp_ref": 0.15}
 _SPEC_FROM_SHEET = {"voc": "V_oc_ref", "isc": "I_sc_ref",
                     "vmp": "V_mp_ref", "imp": "I_mp_ref"}
+# The datasheet-facing names, in the order an engineer reads them off a sheet.
+SPEC_FIELDS = [("voc", "Voc", "V"), ("isc", "Isc", "A"),
+               ("vmp", "Vmp", "V"), ("imp", "Imp", "A")]
+
+
+def _number(value, limit: float):
+    """A finite, sane number, or None. Anything else is discarded.
+
+    json.dumps happily writes Infinity/NaN, which are not valid JSON — one
+    "1e400" typed into a number field would be written out and then fail to
+    parse forever after, taking the whole library page down with it.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if f != f or f in (float("inf"), float("-inf")):    # NaN / +-inf
+        return None
+    return f if 0 <= f <= limit else None
+
+
+def _wanted_specs(specs: dict) -> dict:
+    """Datasheet keys (voc/isc/vmp/imp) -> the CEC names we match on."""
+    out = {}
+    for k, v in (specs or {}).items():
+        if k not in _SPEC_FROM_SHEET or v in (None, ""):
+            continue
+        n = _number(v, 10_000)          # no PV module exceeds this in V or A
+        if n is not None:
+            out[_SPEC_FROM_SHEET[k]] = n
+    return out
+
+
+def specs_for_display(entry: dict) -> list[dict]:
+    """A custom entry's nameplate values in datasheet terms, for the edit form."""
+    saved = entry.get("specs") or {}
+    return [{"key": key, "label": label, "unit": unit,
+             "value": saved.get(_SPEC_FROM_SHEET[key])}
+            for key, label, unit in SPEC_FIELDS]
+
 
 
 def lookup_by_specs(specs: dict, text_hint: str = "") -> dict | None:
@@ -361,7 +603,8 @@ def _mfr_of(display: str) -> str:
     return display.partition("—")[0].strip()
 
 
-def add_custom_module_from_specs(manufacturer: str, model: str, specs: dict) -> str:
+def add_custom_module_from_specs(manufacturer: str, model: str, specs: dict,
+                                 source: str = "") -> str:
     """Remember a module the CEC database doesn't carry, keyed on the nameplate
     values read from its datasheet, under an engineer-verified name.
 
@@ -371,35 +614,52 @@ def add_custom_module_from_specs(manufacturer: str, model: str, specs: dict) -> 
     treated as authoritative even though nameplate values alone are otherwise
     ambiguous (several makers publish identical ones).
     """
-    wanted = {_SPEC_FROM_SHEET[k]: float(v) for k, v in (specs or {}).items()
-              if k in _SPEC_FROM_SHEET and v is not None}
+    wanted = _wanted_specs(specs)
     if len(wanted) < 3:
         raise ValueError("That datasheet didn't yield enough nameplate values "
                          "(need at least three of Voc, Isc, Vmp, Imp) to identify "
                          "the module later.")
-    manufacturer, model = manufacturer.strip(), model.strip()
-    if not model:
-        raise ValueError("Enter the module model name.")
-    display = f"{manufacturer} — {model}" if manufacturer else model
+    manufacturer, model, display = _compose(manufacturer, model)
 
-    entries = _load_custom()
-    entries = [e for e in entries
-               if not (e.get("kind") == "specs" and e.get("specs") == wanted)]
-    entries.append({"display": display, "manufacturer": manufacturer,
-                    "model": model, "kind": "specs", "specs": wanted,
-                    "params": {}})
-    _custom_json().write_text(json.dumps(entries), encoding="utf-8")
+    entry = {"id": uuid.uuid4().hex[:10], "display": display,
+             "manufacturer": manufacturer, "model": model,
+             "kind": "specs", "specs": wanted, "params": {},
+             "source": (source or "datasheet")}
+    pmax = _number((specs or {}).get("pmax"), 100_000)
+    if pmax is not None:
+        entry["pmax_w"] = pmax
+
+    with _custom_lock:
+        entries = _load_custom(strict=True)
+        _ensure_ids(entries)
+        entries = [e for e in entries
+                   if not (e.get("kind") == "specs" and e.get("specs") == wanted)]
+        entries.append(entry)
+        _save_custom(entries)
     return display
 
 
 def _custom_spec_match(wanted: dict) -> dict | None:
     """A verified custom module whose nameplate values match. Engineer-confirmed,
-    so it outranks anything inferred from the CEC database."""
+    so it outranks anything inferred from the CEC database.
+
+    Compares only the values BOTH sides carry. The two sides routinely disagree
+    on which they have: a stored entry may hold three (that is all its datasheet
+    published, and the editor permits three), while a fresh scrape may recover
+    all four. Requiring the saved entry to answer every key the datasheet offers
+    made such an entry permanently unmatchable — and silently so, because
+    lookup_by_specs then fell through to the CEC database and returned a
+    DIFFERENT manufacturer's lookalike panel into the report. Three shared
+    values is the floor, the same bar add/update enforce.
+    """
     for e in _load_custom():
         if e.get("kind") != "specs":
             continue
         saved = e.get("specs") or {}
-        if all(abs(saved.get(k, 1e9) - v) <= _SPEC_TOL[k] for k, v in wanted.items()):
+        shared = [k for k in saved if k in wanted and k in _SPEC_TOL]
+        if len(shared) < 3:
+            continue
+        if all(abs(saved[k] - wanted[k]) <= _SPEC_TOL[k] for k in shared):
             return {"display": e["display"], "params": {}, "confident": True,
                     "alternatives": [], "custom": True}
     return None

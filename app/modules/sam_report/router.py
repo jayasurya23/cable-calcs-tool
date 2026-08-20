@@ -640,50 +640,307 @@ def report_docx(upload_id: str):
     )
 
 
-# ── Module library (admin): CEC module database status, refresh, custom adds ──
+# ── Module library (admin) ─────────────────────────────────────────────
+# Three things live here: the modules we maintain ourselves (view / edit /
+# delete), adding a new one (from a datasheet PDF — read by AI when the
+# deterministic matchers can't place it — from a pysam JSON, or by hand), and
+# a read-only browse of the CEC database itself.
+#
+# Rendering note: building any of these contexts reads custom_modules.json off
+# the Azure Files mount and can parse the 30k-row CEC CSV. Both are blocking, so
+# every async handler builds its context in a worker thread rather than on the
+# event loop — a slow SMB round-trip here would otherwise stall every other
+# request in the process.
 
-def _modules_ctx(msg=None, error=None):
-    return {"stats": cec_db.stats(), "custom": cec_db.custom_modules(),
-            "msg": msg, "error": error}
+def _ai_status() -> dict:
+    """What the page should say about AI datasheet reading."""
+    from . import ai_extract
+    p = ai_extract.provider()
+    enabled = ai_extract.is_enabled()
+    return {"enabled": enabled, "provider": p or "none",
+            "model": (ai_extract._default_model(p) if enabled else "")}
+
+
+# How an entry got here, in words an engineer reads rather than internal source ids.
+_SOURCE_LABELS = {
+    "ai": "read by AI from the datasheet",
+    "text": "scraped from the datasheet text",
+    "cec": "matched in the CEC database",
+    "cec-specs": "matched in the CEC database by its numbers",
+    "cec-specs-ambiguous": "matched by its numbers (several candidates)",
+    "datasheet": "confirmed on an analysis",
+    "manual": "entered by hand",
+}
+
+
+def _custom_view(entry: dict) -> dict:
+    """One library entry shaped for display — the template does no logic."""
+    src = entry.get("source") or ""
+    return {**entry,
+            "spec_fields": cec_db.specs_for_display(entry),
+            "editable_specs": entry.get("kind") == "specs",
+            "param_count": len(entry.get("params") or {}),
+            "source_label": _SOURCE_LABELS.get(src, "")}
+
+
+def _custom_views() -> list[dict]:
+    return [_custom_view(e) for e in cec_db.custom_modules()]
+
+
+def _page_ctx(page_msg=None, page_error=None) -> dict:
+    """Context for a full page render. `page_msg`/`page_error` are deliberately
+    NOT called msg/error: the list fragment nested inside owns those names, and
+    sharing them rendered every banner twice."""
+    return {"stats": cec_db.stats(), "custom": _custom_views(),
+            "ai": _ai_status(), "page_msg": page_msg, "page_error": page_error}
+
+
+def _list_ctx(msg=None, error=None, oob=False) -> dict:
+    return {"custom": _custom_views(), "stats": cec_db.stats(),
+            "msg": msg, "error": error, "oob": oob}
+
+
+def _list_fragment(request: Request, ctx: dict):
+    """The library list, re-rendered after an edit or delete (both of which are
+    triggered from the visible 'Our modules' tab, so the list IS the feedback)."""
+    return templates.TemplateResponse(request, "sam_report/_modules_list.html", ctx)
+
+
+def _add_result(request: Request, ctx: dict):
+    """Feedback for an ADD, which is triggered from the 'Add a module' tab.
+
+    The list lives in a different tab panel, and that panel is `hidden` while
+    adding — so swapping only the list meant a rejected add looked exactly like
+    a successful one: nothing on screen changed at all. This renders the notice
+    where the engineer is looking and refreshes the list out-of-band.
+    """
+    return templates.TemplateResponse(request, "sam_report/_module_add_result.html", ctx)
 
 
 @router.get("/modules", response_class=HTMLResponse)
-def module_library(request: Request, admin: User = Depends(require_admin)):
-    """The CEC module library: DB status, refresh, and custom module adds."""
-    return templates.TemplateResponse(request, "sam_report/modules.html", _modules_ctx())
+async def module_library(request: Request, admin: User = Depends(require_admin)):
+    """The module library: our own modules, adding one, and the CEC database."""
+    ctx = await run_in_threadpool(_page_ctx)
+    return templates.TemplateResponse(request, "sam_report/modules.html", ctx)
 
 
 @router.post("/modules/refresh", response_class=HTMLResponse)
 async def module_refresh(request: Request, admin: User = Depends(require_admin)):
+    """Pull a fresh copy of the CEC database from NREL (HTMX, so the engineer
+    stays on the tab the button lives on)."""
     ok, msg = await run_in_threadpool(cec_db.refresh_from_nrel)
-    return templates.TemplateResponse(
-        request, "sam_report/modules.html",
-        _modules_ctx(msg=(msg if ok else None), error=(None if ok else msg)))
+    ctx = await run_in_threadpool(_page_ctx, msg if ok else None, None if ok else msg)
+    return templates.TemplateResponse(request, "sam_report/_modules_dbstatus.html", ctx)
 
+
+# ── browse the CEC database ────────────────────────────────────────────
+
+@router.get("/modules/search", response_class=HTMLResponse)
+async def module_search(request: Request, q: str = "",
+                        admin: User = Depends(require_admin)):
+    """Name search across the CEC database (HTMX fragment)."""
+    result = await run_in_threadpool(cec_db.search_modules, q)
+    return templates.TemplateResponse(request, "sam_report/_modules_search.html",
+                                      {"result": result})
+
+
+@router.get("/modules/blank", response_class=HTMLResponse)
+def module_blank(admin: User = Depends(require_admin)):
+    """Empties the datasheet-proposal area (the Discard button)."""
+    return HTMLResponse("")
+
+
+@router.get("/modules/list", response_class=HTMLResponse)
+async def module_list_fragment(request: Request, admin: User = Depends(require_admin)):
+    """The library list on its own — lets a stale page resync without a reload."""
+    return _list_fragment(request, await run_in_threadpool(_list_ctx))
+
+
+# ── add from a datasheet PDF (AI-assisted) ───────────────────────────────
+
+def _already_known(found: dict | None) -> str:
+    """The library entry this proposal would duplicate, if any."""
+    disp = ((found or {}).get("display") or "").strip().lower()
+    if not disp:
+        return ""
+    for e in cec_db.custom_modules():
+        if (e.get("display") or "").strip().lower() == disp:
+            return e["display"]
+    return ""
+
+
+@router.post("/modules/identify", response_class=HTMLResponse)
+async def module_identify(request: Request, datasheet: UploadFile = File(...),
+                          admin: User = Depends(require_admin)):
+    """Read an uploaded datasheet and propose a module for the engineer to confirm.
+
+    Runs the same pipeline an analysis upload uses: match the CEC database by
+    name, then by nameplate numbers, then let the configured AI model read the
+    sheet, then fall back to regex. Nothing is written to the library here — the
+    result is a proposal, and only the confirm step below commits it.
+    """
+    from . import datasheet_parser
+
+    name = Path(datasheet.filename or "datasheet.pdf").name
+
+    async def render(**extra):
+        base = await run_in_threadpool(
+            lambda: {"filename": name, "ai": _ai_status(),
+                     "spec_fields": cec_db.SPEC_FIELDS})
+        base.update(extra)
+        return templates.TemplateResponse(
+            request, "sam_report/_module_identified.html", base)
+
+    if not name.lower().endswith(".pdf"):
+        return await render(error="Upload the datasheet as a PDF.")
+
+    # Refuse an oversized body from its declared length, before Starlette spools
+    # gigabytes to the container's disk on the way to a limit check.
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > settings.max_upload_bytes * 2:
+        return await render(
+            error=f"That file is larger than the "
+                  f"{round(settings.max_upload_bytes / (1024 * 1024))} MB upload limit.")
+
+    def _run() -> dict | None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / name
+            service.copy_limited(datasheet.file, path, what="datasheet")
+            return datasheet_parser.identify(path)
+
+    try:
+        found = await run_in_threadpool(_run)
+    except ValueError as exc:                      # over the upload size limit
+        return await render(error=str(exc))
+    except Exception as exc:                       # noqa: BLE001
+        return await render(error=service.friendly_upload_error(exc))
+
+    already = await run_in_threadpool(_already_known, found)
+    return await render(found=found, already=already)
+
+
+@router.post("/modules/add-datasheet", response_class=HTMLResponse)
+async def module_add_datasheet(request: Request,
+                               manufacturer: str = Form(""), model: str = Form(""),
+                               voc: str = Form(""), isc: str = Form(""),
+                               vmp: str = Form(""), imp: str = Form(""),
+                               pmax: str = Form(""), source: str = Form(""),
+                               admin: User = Depends(require_admin)):
+    """Save the engineer-confirmed result of a datasheet read into the library."""
+    specs = {k: v for k, v in (("voc", voc), ("isc", isc), ("vmp", vmp),
+                               ("imp", imp), ("pmax", pmax)) if str(v).strip()}
+
+    def _save() -> dict:
+        try:
+            saved = cec_db.add_custom_module_from_specs(
+                manufacturer, model, specs, source or "manual")
+            return _list_ctx(msg=f"Added “{saved}” to the library.", oob=True)
+        except (ValueError, cec_db.LibraryUnavailable) as exc:
+            return _list_ctx(error=str(exc), oob=True)
+
+    return _add_result(request, await run_in_threadpool(_save))
+
+
+# ── add from a pysam JSON ────────────────────────────────────────────
 
 @router.post("/modules/add", response_class=HTMLResponse)
 async def module_add(request: Request,
                      manufacturer: str = Form(""), model: str = Form(""),
                      pysam: UploadFile = File(...),
                      admin: User = Depends(require_admin)):
-    msg = error = None
-    try:
-        data = json.loads((await pysam.read()).decode("utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("That isn’t a pysam inputs JSON.")
-        disp = cec_db.add_custom_module(manufacturer, model, data)
-        msg = f"Added “{disp}”. Reports whose module matches it will use this name."
-    except ValueError as exc:
-        error = str(exc)
-    except Exception as exc:  # noqa: BLE001 - bad JSON etc.
-        error = f"Couldn’t read that pysam JSON: {exc}"
-    return templates.TemplateResponse(request, "sam_report/modules.html", _modules_ctx(msg, error))
+    raw = await pysam.read()
+
+    def _save() -> dict:
+        try:
+            data = json.loads(raw.decode("utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("That isn’t a pysam inputs JSON.")
+            disp = cec_db.add_custom_module(manufacturer, model, data)
+            return _list_ctx(msg=f"Added “{disp}”. Reports whose module matches "
+                                 f"it will use this name.", oob=True)
+        except (ValueError, cec_db.LibraryUnavailable) as exc:
+            return _list_ctx(error=str(exc), oob=True)
+        except Exception:  # noqa: BLE001 - malformed JSON / bad encoding
+            return _list_ctx(error="That file isn’t readable as a pysam inputs "
+                                   "JSON. Export it again from SAM and retry.",
+                             oob=True)
+
+    return _add_result(request, await run_in_threadpool(_save))
 
 
-@router.post("/modules/remove/{index}", response_class=HTMLResponse)
-def module_remove(request: Request, index: int, admin: User = Depends(require_admin)):
-    cec_db.remove_custom_module(index)
-    return templates.TemplateResponse(request, "sam_report/modules.html", _modules_ctx())
+# ── view / edit / delete what we already have ────────────────────────────
+
+def _gone(request: Request, module_id: str):
+    """A single row saying this module is gone.
+
+    Edit and Cancel target one row with hx-swap="outerHTML", so answering them
+    with the whole list injected a second, nested #modules-list into that row's
+    slot — duplicate ids, every module shown twice, and subsequent edits
+    resolving to the wrong element.
+    """
+    return templates.TemplateResponse(request, "sam_report/_module_gone.html",
+                                      {"module_id": module_id})
+
+
+@router.get("/modules/{module_id}/edit", response_class=HTMLResponse)
+async def module_edit_form(request: Request, module_id: str,
+                           admin: User = Depends(require_admin)):
+    entry = await run_in_threadpool(cec_db.get_custom_module, module_id)
+    if entry is None:
+        return _gone(request, module_id)
+    return templates.TemplateResponse(request, "sam_report/_module_edit.html",
+                                      {"m": _custom_view(entry)})
+
+
+@router.get("/modules/{module_id}/row", response_class=HTMLResponse)
+async def module_row(request: Request, module_id: str,
+                     admin: User = Depends(require_admin)):
+    """Re-render a single row — used to cancel an edit without reloading the list."""
+    entry = await run_in_threadpool(cec_db.get_custom_module, module_id)
+    if entry is None:
+        return _gone(request, module_id)
+    return templates.TemplateResponse(request, "sam_report/_module_row.html",
+                                      {"m": _custom_view(entry)})
+
+
+@router.post("/modules/{module_id}", response_class=HTMLResponse)
+async def module_update(request: Request, module_id: str,
+                        manufacturer: str = Form(""), model: str = Form(""),
+                        voc: str = Form(""), isc: str = Form(""),
+                        vmp: str = Form(""), imp: str = Form(""),
+                        pmax: str = Form(""), notes: str = Form(""),
+                        admin: User = Depends(require_admin)):
+    specs = {k: v for k, v in (("voc", voc), ("isc", isc), ("vmp", vmp), ("imp", imp))
+             if str(v).strip()}
+
+    def _save() -> dict:
+        try:
+            saved = cec_db.update_custom_module(
+                module_id, manufacturer, model, specs=(specs or None),
+                pmax_w=(pmax or None), notes=notes)
+            return _list_ctx(msg=f"Updated “{saved}”.")
+        except (ValueError, cec_db.LibraryUnavailable) as exc:
+            return _list_ctx(error=str(exc))
+
+    return _list_fragment(request, await run_in_threadpool(_save))
+
+
+@router.post("/modules/{module_id}/delete", response_class=HTMLResponse)
+async def module_remove(request: Request, module_id: str,
+                        admin: User = Depends(require_admin)):
+    def _delete() -> dict:
+        try:
+            entry = cec_db.get_custom_module(module_id)
+            gone = cec_db.remove_custom_module(module_id)
+        except cec_db.LibraryUnavailable as exc:
+            return _list_ctx(error=str(exc))
+        return _list_ctx(
+            msg=(f"Removed “{entry['display']}” from the library."
+                 if gone and entry else None),
+            error=(None if gone else "That module was already removed."))
+
+    return _list_fragment(request, await run_in_threadpool(_delete))
 
 
 @router.get("/download/{upload_id}/{filename}")

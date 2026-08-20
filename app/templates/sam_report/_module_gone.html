@@ -1,0 +1,15 @@
+{# One row's worth of "this module is no longer here".
+   Edit and Cancel swap a SINGLE row by outerHTML, so answering them with the
+   whole list nested a second #modules-list inside that row's slot. #}
+<div class="lib-row lib-row-gone" id="mod-{{ module_id }}">
+  <div class="lib-main">
+    <div class="lib-name">Removed</div>
+    <div class="lib-meta">Someone deleted this module while you had the page open.</div>
+  </div>
+  <div class="lib-specs"></div>
+  <div class="lib-actions">
+    <button class="btn btn-secondary btn-sm" type="button"
+            hx-get="/sam/modules/list" hx-target="#modules-list"
+            hx-swap="outerHTML">Refresh list</button>
+  </div>
+</div>

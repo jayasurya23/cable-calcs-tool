@@ -112,6 +112,15 @@
       var dz = e.target.closest(".js-dropzone");
       if (dz) handle(dz, e.target.files);
       e.target.value = ""; // allow re-picking the same file later
+      return;
+    }
+    // Datasheet zones post themselves via HTMX on `change`. Clearing the value
+    // AFTER htmx has read the file lets the same PDF be picked again — without
+    // this, re-choosing the file the user just tried fires no change event at
+    // all and the button appears dead.
+    if (e.target && e.target.closest && e.target.closest(".js-ds-dropzone")) {
+      var input = e.target;
+      setTimeout(function () { input.value = ""; }, 0);
     }
   });
 

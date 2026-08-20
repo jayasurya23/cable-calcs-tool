@@ -1,0 +1,14 @@
+{# CEC database status + the refresh control. Its own HTMX target so refreshing
+   keeps the engineer on this tab instead of reloading the page onto the first one. #}
+<h4>Database updates</h4>
+{% if page_msg %}<div class="notice-ok">✓ {{ page_msg }}</div>{% endif %}
+{% if page_error %}<div class="warning">⚠ {{ page_error }}</div>{% endif %}
+<p class="hint">Refreshes automatically from NREL’s SAM library in the background when the
+  cached copy is older than 7 days. Current copy: <b>{{ stats.source }}</b>{% if
+  stats.cache_age_days is not none %}, {{ stats.cache_age_days }} days old{% endif %},
+  {{ "{:,}".format(stats.module_count) }} modules.</p>
+<form hx-post="/sam/modules/refresh" hx-target="#db-status" hx-swap="innerHTML"
+      hx-indicator="#refresh-spin">
+  <button class="btn btn-secondary btn-sm" type="submit">↻ Refresh from NREL now</button>
+  <span id="refresh-spin" class="htmx-indicator spinner" style="margin-left:8px">Downloading…</span>
+</form>

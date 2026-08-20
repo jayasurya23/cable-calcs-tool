@@ -1,0 +1,39 @@
+{# One library entry, read-only. `Edit` swaps this row for _module_edit.html. #}
+<div class="lib-row" id="mod-{{ m.id }}">
+  <div class="lib-main">
+    <div class="lib-name">{{ m.display }}</div>
+    <div class="lib-meta">
+      {% if m.editable_specs %}
+        <span class="pill pill-muted" title="Matched on the nameplate values below">nameplate</span>
+      {% else %}
+        <span class="pill pill-ok" title="Matched on the full CEC 6-parameter set from a pysam">pysam
+          · {{ m.param_count }} params</span>
+      {% endif %}
+      {% if m.pmax_w %}<span class="lib-dot">·</span>{{ m.pmax_w | round | int }} W{% endif %}
+      {% if m.source_label %}<span class="lib-dot">·</span>{{ m.source_label }}{% endif %}
+    </div>
+    {% if m.notes %}<div class="lib-notes">{{ m.notes }}</div>{% endif %}
+  </div>
+
+  <div class="lib-specs">
+    {% if m.editable_specs %}
+      {% for f in m.spec_fields %}
+        {% if f.value is not none %}
+          <span class="chip"><b>{{ f.label }}</b> {{ "%.2f" | format(f.value) }} {{ f.unit }}</span>
+        {% endif %}
+      {% endfor %}
+    {% else %}
+      <span class="hint">Full CEC parameter set — matched exactly, nothing to hand-edit.</span>
+    {% endif %}
+  </div>
+
+  <div class="lib-actions">
+    <button class="btn btn-secondary btn-sm" type="button"
+            hx-get="/sam/modules/{{ m.id }}/edit"
+            hx-target="#mod-{{ m.id }}" hx-swap="outerHTML">Edit</button>
+    <button class="btn-remove" type="button" title="Remove from the library"
+            hx-post="/sam/modules/{{ m.id }}/delete"
+            hx-target="#modules-list" hx-swap="outerHTML"
+            hx-confirm="Remove “{{ m.display }}” from the module library? Reports will fall back to the CEC database for this module.">&times;</button>
+  </div>
+</div>

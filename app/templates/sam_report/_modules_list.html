@@ -1,0 +1,24 @@
+{# The modules we maintain. Re-rendered whole after any add / edit / delete.
+   `oob`: this copy is riding along an add, whose visible notice is rendered in
+   the Add tab — so the banner is suppressed here to keep one source of truth. #}
+<div id="modules-list"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if msg and not oob %}<div class="notice-ok">✓ {{ msg }}</div>{% endif %}
+  {% if error and not oob %}<div class="warning">⚠ {{ error }}</div>{% endif %}
+
+  {% if custom %}
+    <p class="hint">{{ custom | length }} module{{ '' if custom | length == 1 else 's' }} we
+      maintain. These outrank the CEC database, so an entry here is what a report will show.</p>
+    <div class="lib-rows">
+      {% for m in custom %}{% include "sam_report/_module_row.html" %}{% endfor %}
+    </div>
+  {% else %}
+    <div class="lib-empty">
+      <p><b>No modules of our own yet.</b></p>
+      <p class="hint">Everything is being named from the CEC database
+        ({{ "{:,}".format(stats.module_count) }} modules). Add one here when a panel is too new
+        for the database, or when a client uses a different designation than NREL lists.</p>
+      <button class="btn btn-secondary btn-sm" type="button" data-goto-tab="add">
+        Add a module</button>
+    </div>
+  {% endif %}
+</div>

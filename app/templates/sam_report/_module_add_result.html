@@ -1,0 +1,16 @@
+{# Feedback for an add, rendered where the engineer actually is (the Add tab).
+   The library list lives in a different, hidden tab panel, so it is refreshed
+   out-of-band along with the two counters that would otherwise go stale. #}
+<div class="add-notice">
+  {% if msg %}
+    <div class="notice-ok">✓ {{ msg }}
+      <button class="btn btn-secondary btn-sm" type="button" data-goto-tab="ours"
+              style="margin-left:10px">See it in Our modules</button>
+    </div>
+  {% endif %}
+  {% if error %}<div class="warning">⚠ {{ error }}</div>{% endif %}
+</div>
+
+{% include "sam_report/_modules_list.html" %}
+<b id="lib-count" hx-swap-oob="true">{{ stats.custom_count }}</b>
+<span class="chip" id="lib-count-chip" hx-swap-oob="true"><b>Ours</b> {{ stats.custom_count }}</span>
