@@ -31,6 +31,11 @@ def get_db():
         db.close()
 
 
+# Where projects that predate the hierarchy land, so nothing is orphaned and
+# nobody has to invent a client before the app will start.
+UNASSIGNED_CLIENT = "Unassigned"
+
+
 def _migrate(conn) -> None:
     """Idempotent, dialect-aware schema migration (no Alembic). Runs inside the
     same transaction/advisory-lock as create_all so concurrent workers serialize.
@@ -84,6 +89,58 @@ def _migrate(conn) -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE revisions ADD CONSTRAINT uq_analysis_rev "
                 "UNIQUE (analysis_id, rev_number)")
+
+    # 4) Client / Portfolio above Project. create_all has already made the two
+    #    new tables; this adds the parent columns to a live `projects` table and
+    #    gives every existing project a home. Projects predate the hierarchy, so
+    #    they land under a single "Unassigned" client for someone to sort later
+    #    — deliberately NOT guessed from owner_name, which is a cover-sheet field
+    #    filled in loosely and would produce plausible-looking wrong parents.
+    if d == "postgresql":
+        conn.exec_driver_sql(
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_id INTEGER "
+            "REFERENCES clients(id)")
+        conn.exec_driver_sql(
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS portfolio_id INTEGER "
+            "REFERENCES portfolios(id)")
+        # create_all only indexes tables it creates, and `projects` already
+        # exists — so the index=True on the model would never take effect here.
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_client_id "
+                             "ON projects (client_id)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_portfolio_id "
+                             "ON projects (portfolio_id)")
+    else:
+        cols = {r[1] for r in conn.exec_driver_sql("PRAGMA table_info(projects)").fetchall()}
+        if "client_id" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE projects ADD COLUMN client_id INTEGER REFERENCES clients(id)")
+        if "portfolio_id" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE projects ADD COLUMN portfolio_id INTEGER REFERENCES portfolios(id)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_client_id "
+                             "ON projects (client_id)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_portfolio_id "
+                             "ON projects (portfolio_id)")
+
+    if conn.execute(text(
+            "SELECT 1 FROM projects WHERE client_id IS NULL LIMIT 1")).fetchone():
+        unassigned = conn.execute(text(
+            "SELECT id FROM clients WHERE name = :n"), {"n": UNASSIGNED_CLIENT}).scalar()
+        if unassigned is None:
+            ins = text(
+                "INSERT INTO clients (name, code, status, notes, created_at) "
+                f"VALUES (:n, '', 'active', :d, {now_fn})"
+                + (" RETURNING id" if d == "postgresql" else ""))
+            params = {"n": UNASSIGNED_CLIENT,
+                      "d": "Projects that predate the client/portfolio structure. "
+                           "Move them to their real client when you get to them."}
+            if d == "postgresql":
+                unassigned = conn.execute(ins, params).scalar()
+            else:
+                conn.execute(ins, params)
+                unassigned = conn.execute(text("SELECT last_insert_rowid()")).scalar()
+        conn.execute(text("UPDATE projects SET client_id = :cid WHERE client_id IS NULL"),
+                     {"cid": unassigned})
 
 
 def init_db() -> None:

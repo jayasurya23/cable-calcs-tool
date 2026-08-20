@@ -12,6 +12,8 @@ from app.core.deps import Forbidden, NeedsLogin, require_user
 from app.core.models import User
 from app.core.templating import STATIC_DIR, templates
 from app.modules.auth.router import admin_router, router as auth_router
+from app.modules.clients.router import (portfolio_router,
+                                        router as clients_router)
 from app.modules.projects.router import router as projects_router
 from app.modules.sam_report.router import router as sam_router
 from app.shared.engine import ENGINES_AVAILABLE, ENGINE_IMPORT_ERROR
@@ -50,6 +52,8 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # Open routes: sign-in/setup + health + static. Everything else requires a user.
 app.include_router(auth_router)
 app.include_router(admin_router)          # admin gate enforced per-endpoint
+app.include_router(clients_router)        # require_user enforced per-endpoint
+app.include_router(portfolio_router)      # require_user enforced per-endpoint
 app.include_router(projects_router)       # require_user enforced per-endpoint
 app.include_router(sam_router, dependencies=[Depends(require_user)])
 

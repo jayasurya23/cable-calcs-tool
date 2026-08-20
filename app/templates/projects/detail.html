@@ -3,7 +3,15 @@
 
 {% block breadcrumb %}
 <nav class="breadcrumb">
+  {% if project.client %}
+  <a href="/clients">Clients</a><span class="sep">&rsaquo;</span>
+  <a href="/clients/{{ project.client.id }}">{{ project.client.name }}</a><span class="sep">&rsaquo;</span>
+  {% if project.portfolio %}
+  <a href="/portfolios/{{ project.portfolio.id }}">{{ project.portfolio.name }}</a><span class="sep">&rsaquo;</span>
+  {% endif %}
+  {% else %}
   <a href="/projects">Projects</a><span class="sep">&rsaquo;</span>
+  {% endif %}
   <span class="crumb-current">{{ project.name }}</span>
 </nav>
 {% endblock %}
@@ -21,6 +29,48 @@
 </section>
 
 {% if saved %}<div class="notice-ok">✓ Project saved</div>{% endif %}
+{% if request.query_params.get("error") == "client" %}
+<div class="warning">⚠ Choose a client to move this project to.</div>{% endif %}
+{% if request.query_params.get("error") == "portfolio" %}
+<div class="warning">⚠ That portfolio belongs to a different client. Pick one of the chosen
+  client's portfolios, or leave it directly under the client.</div>{% endif %}
+
+<div class="filed-under">
+  <span class="dl-meta">Filed under
+    {% if project.client %}
+      <a href="/clients/{{ project.client.id }}">{{ project.client.name }}</a>
+      {% if project.portfolio %}
+        <span class="sep">&rsaquo;</span>
+        <a href="/portfolios/{{ project.portfolio.id }}">{{ project.portfolio.name }}</a>
+      {% else %}<span class="dims">· no portfolio</span>{% endif %}
+    {% else %}<b>nothing yet</b>{% endif %}
+  </span>
+  <details class="rev-mini">
+    <summary>Move</summary>
+    {# Every portfolio is listed with its client id; the browser filters on
+       change so you can only pick one belonging to the chosen client — and the
+       server re-checks, because a stale page could still post a mismatch. #}
+    <form method="post" action="/projects/{{ project.id }}/move" class="form-grid"
+          id="move-form" style="align-items:end;max-width:760px;margin-top:10px">
+      <label>Client
+        <select name="client_id" id="move-client" required>
+          <option value="">— choose —</option>
+          {% for c in all_clients %}
+          <option value="{{ c.id }}" {% if project.client_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Portfolio <span class="opt">(optional)</span>
+        <select name="portfolio_id" id="move-portfolio">
+          <option value="">— none, directly under the client —</option>
+          {% for pf in all_portfolios %}
+          <option value="{{ pf.id }}" data-client="{{ pf.client_id }}"
+                  {% if project.portfolio_id == pf.id %}selected{% endif %}>{{ pf.name }}</option>
+          {% endfor %}
+        </select></label>
+      <button class="btn btn-primary btn-sm" type="submit" style="margin-bottom:2px">Move project</button>
+    </form>
+  </details>
+</div>
 
 <div class="model-explainer">
   <span class="mx-ic">💡</span>

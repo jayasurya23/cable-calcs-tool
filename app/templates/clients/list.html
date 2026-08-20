@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Clients — Cable Web{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb"><span class="crumb-current">Clients</span></nav>
+{% endblock %}
+
+{% block content %}
+<section class="page-head page-head-row">
+  <div>
+    <h1>Clients</h1>
+    <p class="subtitle">Every client, their portfolios, and the projects underneath.</p>
+  </div>
+  <button class="btn btn-primary" type="button" id="new-client-toggle">+ New client</button>
+</section>
+
+{% if request.query_params.get("error") == "name" %}
+<div class="warning">⚠ A client needs a name.</div>
+{% endif %}
+
+<form class="new-project-form" id="new-client-form" method="post" action="/clients" hidden>
+  <label>Client name<input name="name" required placeholder="e.g. Silicon Ranch"></label>
+  <label>Code <span class="opt">(optional)</span><input name="code" placeholder="e.g. SR"></label>
+  <button class="btn btn-primary btn-sm" type="submit">Create client</button>
+</form>
+
+{% if clients %}
+<div class="cards" id="client-cards">
+  {% for c in clients %}
+  <a class="card project-card" href="/clients/{{ c.id }}">
+    <div class="card-head">
+      <h2>{{ c.name }}</h2>
+      {% if c.status != "active" %}<span class="pill pill-muted">archived</span>{% endif %}
+    </div>
+    {% if c.code %}<p class="card-id">{{ c.code }}</p>{% endif %}
+    <div class="spec-chips">
+      <span class="chip"><b>Portfolios</b> {{ portfolio_counts.get(c.id, 0) }}</span>
+      <span class="chip"><b>Projects</b> {{ project_counts.get(c.id, 0) }}</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="lib-empty">
+  <p><b>No clients yet.</b></p>
+  <p class="hint">Create one, then move projects into it from the project page.</p>
+</div>
+{% endif %}
+
+{% if unfiled %}
+<div class="warning" style="margin-top:16px">⚠ {{ unfiled }} project(s) have no client at all.
+  <a href="/projects" style="text-decoration:underline">Review them</a>.</div>
+{% endif %}
+{% endblock %}

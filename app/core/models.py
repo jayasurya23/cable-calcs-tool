@@ -42,10 +42,61 @@ class AuthSession(Base):
     user: Mapped[User] = relationship()
 
 
+class Client(Base):
+    """Who the work is for. The top of the hierarchy: a client owns portfolios,
+    and may also own one-off projects directly (see Project.portfolio_id)."""
+
+    __tablename__ = "clients"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    code: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active | archived
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    creator: Mapped[User | None] = relationship()
+    portfolios: Mapped[list["Portfolio"]] = relationship(
+        back_populates="client", order_by="Portfolio.name")
+    projects: Mapped[list["Project"]] = relationship(
+        back_populates="client", order_by="Project.name")
+
+
+class Portfolio(Base):
+    """A group of projects for one client. Optional: a project may sit directly
+    under its client, so a one-off site needs no invented portfolio."""
+
+    __tablename__ = "portfolios"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    code: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    creator: Mapped[User | None] = relationship()
+    client: Mapped["Client"] = relationship(back_populates="portfolios")
+    projects: Mapped[list["Project"]] = relationship(
+        back_populates="portfolio", order_by="Project.name")
+
+
 class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Nullable in the schema so the migration can add the column and backfill it;
+    # every project gets a client (an "Unassigned" one if nothing better is known).
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clients.id"), nullable=True, index=True)
+    # Optional level: a one-off site hangs straight off its client.
+    portfolio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("portfolios.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     code: Mapped[str] = mapped_column(String(64), default="")          # e.g. "259-034"
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | archived
@@ -66,6 +117,8 @@ class Project(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
     creator: Mapped[User | None] = relationship()
+    client: Mapped["Client | None"] = relationship(back_populates="projects")
+    portfolio: Mapped["Portfolio | None"] = relationship(back_populates="projects")
     revisions: Mapped[list["Revision"]] = relationship(
         back_populates="project", order_by="Revision.rev_number",
         cascade="all, delete-orphan")

@@ -22,7 +22,7 @@
    and needs no round-trip. See /static/js/projectfilter.js #}
 <div class="list-toolbar js-project-filter">
   <input type="search" id="project-search" class="auth-input" autocomplete="off"
-         placeholder="Search projects by name or ID…" aria-label="Search projects">
+         placeholder="Search by project, ID, client or portfolio…" aria-label="Search projects">
   <div class="seg" role="group" aria-label="Filter by status">
     <button type="button" class="seg-btn seg-active" data-status="active">Active</button>
     <button type="button" class="seg-btn" data-status="archived">Archived</button>
@@ -43,7 +43,7 @@
   <a class="card project-card"
      href="/projects/{{ p.id }}"
      data-name="{{ p.name | lower }}"
-     data-code="{{ (p.code or '') | lower }}"
+     data-code="{{ ((p.code or '') ~ ' ' ~ (p.client.name if p.client else '') ~ ' ' ~ (p.portfolio.name if p.portfolio else '')) | lower }}"
      data-status="{{ p.status }}"
      data-activity="{{ st.last_activity.isoformat() if st.last_activity else '' }}"
      data-created="{{ p.created_at.isoformat() }}">
@@ -54,6 +54,12 @@
     </div>
 
     <p class="card-id">{% if p.code %}ID {{ p.code }}{% else %}<span class="dims">no project ID</span>{% endif %}</p>
+
+    {# Where this project sits, so the flat list still tells you whose job it is. #}
+    <p class="hier-cell">
+      {% if p.client %}{{ p.client.name }}{% if p.portfolio %} › {{ p.portfolio.name }}{% endif %}
+      {% else %}<span class="dims">no client</span>{% endif %}
+    </p>
 
     {# What actually matters: does this job have an issued deliverable yet? #}
     <div class="spec-chips">

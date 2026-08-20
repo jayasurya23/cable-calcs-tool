@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ portfolio.name }} — Cable Web{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a href="/clients">Clients</a><span class="sep">&rsaquo;</span>
+  <a href="/clients/{{ client.id }}">{{ client.name }}</a><span class="sep">&rsaquo;</span>
+  <span class="crumb-current">{{ portfolio.name }}</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>{{ portfolio.name }}
+    {% if portfolio.code %}<span class="dims">· {{ portfolio.code }}</span>{% endif %}
+    {% if portfolio.status != "active" %}<span class="pill pill-muted">archived</span>{% endif %}
+  </h1>
+  <p class="subtitle">Portfolio of <a href="/clients/{{ client.id }}">{{ client.name }}</a>
+    · {{ projects | length }} project{{ '' if projects | length == 1 else 's' }}
+    <button class="btn-copylink" type="button" data-copy-link="/portfolios/{{ portfolio.id }}"
+            title="Copy a link to this portfolio">🔗 Copy link</button>
+  </p>
+</section>
+
+{% if request.query_params.get("saved") %}<div class="notice-ok">✓ Portfolio saved</div>{% endif %}
+{% if request.query_params.get("error") == "notempty" %}
+<div class="warning">⚠ This portfolio still has projects in it. Move them out first — deleting it
+  would take their analyses and filed reports with it.</div>
+{% endif %}
+
+{% if projects %}
+<div class="cards">
+  {% for p in projects %}
+  <a class="card project-card" href="/projects/{{ p.id }}">
+    <div class="card-head"><h2>{{ p.name }}</h2>
+      {% if p.status != "active" %}<span class="pill pill-muted">archived</span>{% endif %}</div>
+    {% if p.code %}<p class="card-id">{{ p.code }}</p>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="lib-empty">
+  <p><b>No projects in this portfolio yet.</b></p>
+  <p class="hint">Open a project and use <b>Move</b> to file it here.</p>
+</div>
+{% endif %}
+
+<div class="form-section" style="margin-top:22px">
+  <h4>Portfolio settings</h4>
+  <form method="post" action="/portfolios/{{ portfolio.id }}" class="form-grid"
+        style="align-items:end;max-width:860px">
+    <label>Name<input name="name" value="{{ portfolio.name }}" required></label>
+    <label>Code<input name="code" value="{{ portfolio.code }}"></label>
+    <label>Status
+      <select name="status">
+        <option value="active" {% if portfolio.status == "active" %}selected{% endif %}>Active</option>
+        <option value="archived" {% if portfolio.status != "active" %}selected{% endif %}>Archived</option>
+      </select></label>
+    <button class="btn btn-primary btn-sm" type="submit" style="margin-bottom:2px">Save</button>
+  </form>
+</div>
+
+{% if not projects %}
+<div class="danger-zone">
+  <form method="post" action="/portfolios/{{ portfolio.id }}/delete"
+        onsubmit="return confirm('Delete this empty portfolio?');">
+    <button class="btn btn-danger btn-sm" type="submit">Delete portfolio</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

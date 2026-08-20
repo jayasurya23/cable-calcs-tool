@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.db import get_db
 from app.core.deps import require_user
-from app.core.models import Analysis, AuditEvent, Project, Revision, User
+from app.core.models import (Analysis, AuditEvent, Client, Portfolio,
+                             Project, Revision, User)
 from app.core.templating import templates
 from . import storage
 
@@ -50,8 +51,12 @@ def project_list(request: Request, db: Session = Depends(get_db),
     count. Filtering/sorting is done client-side in the template — every project
     is already on the page, so it's instant and keeps this route simple.
     """
+    # client/portfolio eager-loaded with the creator: the cards show where each
+    # project sits, and lazy-loading those would be two more queries per card.
     projects = db.scalars(
-        select(Project).options(selectinload(Project.creator))
+        select(Project).options(selectinload(Project.creator),
+                                selectinload(Project.client),
+                                selectinload(Project.portfolio))
         .order_by(Project.created_at.desc())).all()
 
     a_rows = db.execute(
@@ -140,10 +145,16 @@ def project_detail(request: Request, project_id: int, db: Session = Depends(get_
                 "described": [d for d in described
                               if d["path"] != report.get("path")],
             }
+    # For the Move control: every client, and every portfolio grouped by client
+    # so the form can narrow the portfolio list to the chosen client.
+    clients = db.scalars(select(Client).order_by(Client.name)).all()
+    portfolios = db.scalars(select(Portfolio).order_by(Portfolio.name)).all()
     return templates.TemplateResponse(request, "projects/detail.html",
                                       {"project": project, "analyses": analyses,
                                        "analysis_revs": analysis_revs,
                                        "rev_docs": rev_docs,
+                                       "all_clients": clients,
+                                       "all_portfolios": portfolios,
                                        "saved": request.query_params.get("saved")})
 
 
@@ -164,6 +175,33 @@ async def project_update(request: Request, project_id: int,
                       action="project.update", detail=project.name))
     db.commit()
     return RedirectResponse(f"/projects/{project.id}?saved=1", status_code=303)
+
+
+@router.post("/{project_id}/move")
+def project_move(project_id: int, client_id: str = Form(""),
+                 portfolio_id: str = Form(""),
+                 db: Session = Depends(get_db), user: User = Depends(require_user)):
+    """Re-file a project under a client, and optionally a portfolio.
+
+    Existing projects were parked under an "Unassigned" client by the migration;
+    this is how they get sorted. The portfolio must belong to the chosen client —
+    otherwise a project could show up under a portfolio of some other client.
+    """
+    project = _get_project(db, project_id)
+    cid = int(client_id) if str(client_id).isdigit() else None
+    pid = int(portfolio_id) if str(portfolio_id).isdigit() else None
+    if cid is None or db.get(Client, cid) is None:
+        return RedirectResponse(f"/projects/{project_id}?error=client", status_code=303)
+    if pid is not None:
+        pf = db.get(Portfolio, pid)
+        if pf is None or pf.client_id != cid:
+            return RedirectResponse(f"/projects/{project_id}?error=portfolio",
+                                    status_code=303)
+    project.client_id, project.portfolio_id = cid, pid
+    db.add(AuditEvent(user_id=user.id, project_id=project.id, action="project.move",
+                      detail=f"client #{cid}" + (f", portfolio #{pid}" if pid else "")))
+    db.commit()
+    return RedirectResponse(f"/projects/{project_id}?saved=1", status_code=303)
 
 
 @router.post("/{project_id}/delete")

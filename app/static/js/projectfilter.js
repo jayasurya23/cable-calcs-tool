@@ -74,9 +74,11 @@
       apply();
       return;
     }
-    var toggle = e.target.closest && e.target.closest("#new-project-toggle");
+    // "+ New project" / "+ New client": <button id="new-X-toggle"> reveals
+    // <form id="new-X-form">.
+    var toggle = e.target.closest && e.target.closest('[id$="-toggle"]');
     if (toggle) {
-      var form = document.getElementById("new-project-form");
+      var form = document.getElementById(toggle.id.replace(/-toggle$/, "-form"));
       if (form) {
         form.hidden = !form.hidden;
         if (!form.hidden) {
@@ -86,6 +88,30 @@
       }
     }
   });
+
+  /* Moving a project: only the chosen client's portfolios may be picked. The
+   * server re-checks this — a page left open while someone else adds or moves a
+   * portfolio could otherwise post a portfolio belonging to another client. */
+  function syncPortfolios() {
+    var client = document.getElementById("move-client");
+    var portfolio = document.getElementById("move-portfolio");
+    if (!client || !portfolio) return;
+    var chosen = client.value;
+    var stillValid = false;
+    Array.prototype.forEach.call(portfolio.options, function (opt) {
+      if (!opt.value) return;                       // the "none" option always stays
+      var mine = opt.getAttribute("data-client") === chosen;
+      opt.hidden = !mine;
+      opt.disabled = !mine;
+      if (mine && opt.selected) stillValid = true;
+    });
+    if (!stillValid) portfolio.value = "";          // don't carry a foreign portfolio over
+  }
+
+  document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "move-client") syncPortfolios();
+  });
+  document.addEventListener("DOMContentLoaded", syncPortfolios);
 
   // Timestamps are stored and rendered in UTC; show them in the viewer's zone.
   function localize() {

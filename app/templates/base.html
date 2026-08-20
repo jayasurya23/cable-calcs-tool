@@ -41,7 +41,8 @@
     <nav class="topnav">
       {% if user %}
       {# /sam/* pages are analyses, which live under Projects — keep it lit. #}
-      <a href="/projects" class="{{ 'nav-active' if path.startswith('/projects') or (path.startswith('/sam') and not path.startswith('/sam/modules')) }}">Projects</a>
+      <a href="/clients" class="{{ 'nav-active' if path.startswith('/clients') or path.startswith('/portfolios') }}">Clients</a>
+        <a href="/projects" class="{{ 'nav-active' if path.startswith('/projects') or (path.startswith('/sam') and not path.startswith('/sam/modules')) }}">Projects</a>
       <a href="/help" class="{{ 'nav-active' if path == '/help' }}">Help</a>
       {% if user.is_admin %}
       <span class="nav-group">

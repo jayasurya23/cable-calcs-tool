@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }} — Cable Web{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a href="/clients">Clients</a><span class="sep">&rsaquo;</span>
+  <span class="crumb-current">{{ client.name }}</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <h1>{{ client.name }}
+    {% if client.code %}<span class="dims">· {{ client.code }}</span>{% endif %}
+    {% if client.status != "active" %}<span class="pill pill-muted">archived</span>{% endif %}
+  </h1>
+  <p class="subtitle">{{ portfolios | length }} portfolio{{ '' if portfolios | length == 1 else 's' }}
+    · {{ total_projects }} project{{ '' if total_projects == 1 else 's' }}
+    <button class="btn-copylink" type="button" data-copy-link="/clients/{{ client.id }}"
+            title="Copy a link to this client">🔗 Copy link</button>
+  </p>
+</section>
+
+{% if request.query_params.get("saved") %}<div class="notice-ok">✓ Client saved</div>{% endif %}
+{% if request.query_params.get("error") == "name" %}
+<div class="warning">⚠ A portfolio needs a name.</div>{% endif %}
+{% if request.query_params.get("error") == "notempty" %}
+<div class="warning">⚠ This client still has portfolios or projects. Move them out first —
+  deleting it would take their analyses and filed reports with it.</div>{% endif %}
+
+{% if client.notes %}<p class="hint">{{ client.notes }}</p>{% endif %}
+
+<h3>Portfolios</h3>
+{% if portfolios %}
+<div class="cards">
+  {% for pf in portfolios %}
+  <a class="card project-card" href="/portfolios/{{ pf.id }}">
+    <div class="card-head"><h2>{{ pf.name }}</h2>
+      {% if pf.status != "active" %}<span class="pill pill-muted">archived</span>{% endif %}</div>
+    {% if pf.code %}<p class="card-id">{{ pf.code }}</p>{% endif %}
+    <div class="spec-chips">
+      <span class="chip"><b>Projects</b> {{ portfolio_project_counts.get(pf.id, 0) }}</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="hint">No portfolios yet. A portfolio is optional — a one-off site can sit directly
+  under the client instead.</p>
+{% endif %}
+
+<form method="post" action="/clients/{{ client.id }}/portfolios" class="form-grid"
+      style="align-items:end;max-width:760px;margin-top:12px">
+  <label>New portfolio<input name="name" required placeholder="e.g. 2026 Southeast"></label>
+  <label>Code <span class="opt">(optional)</span><input name="code" placeholder="e.g. SE26"></label>
+  <button class="btn btn-secondary btn-sm" type="submit" style="margin-bottom:2px">+ Add portfolio</button>
+</form>
+
+<h3 style="margin-top:26px">Projects directly under this client</h3>
+{% if direct_projects %}
+<p class="hint">These sit under the client with no portfolio — which is fine for one-off sites.</p>
+<div class="cards">
+  {% for p in direct_projects %}
+  <a class="card project-card" href="/projects/{{ p.id }}">
+    <div class="card-head"><h2>{{ p.name }}</h2>
+      {% if p.status != "active" %}<span class="pill pill-muted">archived</span>{% endif %}</div>
+    {% if p.code %}<p class="card-id">{{ p.code }}</p>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="hint">None — every project of this client is filed under a portfolio.</p>
+{% endif %}
+
+<div class="form-section" style="margin-top:26px">
+  <h4>Client settings</h4>
+  <form method="post" action="/clients/{{ client.id }}" class="form-grid"
+        style="align-items:end;max-width:860px">
+    <label>Name<input name="name" value="{{ client.name }}" required></label>
+    <label>Code<input name="code" value="{{ client.code }}"></label>
+    <label>Status
+      <select name="status">
+        <option value="active" {% if client.status == "active" %}selected{% endif %}>Active</option>
+        <option value="archived" {% if client.status != "active" %}selected{% endif %}>Archived</option>
+      </select></label>
+    <label class="field-full">Notes<input name="notes" value="{{ client.notes }}"></label>
+    <button class="btn btn-primary btn-sm" type="submit" style="margin-bottom:2px">Save</button>
+  </form>
+</div>
+
+{% if not portfolios and not total_projects %}
+<div class="danger-zone">
+  <form method="post" action="/clients/{{ client.id }}/delete"
+        onsubmit="return confirm('Delete this empty client?');">
+    <button class="btn btn-danger btn-sm" type="submit">Delete client</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -778,3 +778,14 @@ body.layout-wide .content { max-width: 1560px; }
   background: rgba(220, 20, 60, .14) !important;
   scroll-margin-top: 90px;
 }
+
+/* ── Client / Portfolio hierarchy ──────────────────────────────────── */
+.filed-under {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px 14px; margin: 14px 0;
+}
+.filed-under .dl-meta { color: var(--muted); font-size: 13px; }
+.filed-under a { color: var(--text); }
+.filed-under .rev-mini { margin-left: auto; }
+.hier-cell { color: var(--muted); font-size: 12px; }
