@@ -117,10 +117,29 @@ def project_detail(request: Request, project_id: int, db: Session = Depends(get_
         for r in revs:
             analysis_revs.setdefault(r.analysis_id, []).append(r)
             files = json.loads(r.files_json or "[]")
-            pdf = next((f for f in files if f.lower().endswith(".pdf")), None)
-            docx = next((f for f in files if f.lower().endswith(".docx")), None)
-            rev_docs[r.id] = {"pdf": pdf, "docx": docx,
-                              "others": [f for f in files if f != pdf]}
+            # Select by what each file IS, not by extension: a revision also
+            # holds module datasheets (.pdf), so "the first .pdf" would happily
+            # offer a datasheet as the issued report if the stored order ever
+            # changed.
+            described = storage.describe_files(files)
+            # Pick the canonical file of each kind by the order it was FILED, not
+            # the order it is displayed in: several modules each contribute a
+            # source workbook, and the analysis's own is the one filed first.
+            by_kind = {}
+            for d in sorted(described, key=lambda x: x["order"]):
+                by_kind.setdefault(d["kind"], d)
+            report = by_kind.get("report-pdf") or {}
+            docx = by_kind.get("report-docx") or {}
+            source = by_kind.get("source-workbook") or {}
+            rev_docs[r.id] = {
+                # `path` is what the download route needs; `name` is what a person
+                # should read. Using the display name as the href 404s for any
+                # file stored under a staging prefix.
+                "pdf": report.get("path"), "docx": docx.get("path"),
+                "source": source.get("path"), "source_name": source.get("name"),
+                "described": [d for d in described
+                              if d["path"] != report.get("path")],
+            }
     return templates.TemplateResponse(request, "projects/detail.html",
                                       {"project": project, "analyses": analyses,
                                        "analysis_revs": analysis_revs,
@@ -170,6 +189,25 @@ def analysis_delete(request: Request, project_id: int, analysis_id: int,
         return RedirectResponse(f"/projects/{project_id}", status_code=303)
     storage.delete_analysis(db, analysis, user)
     return RedirectResponse(f"/projects/{project_id}", status_code=303)
+
+
+@router.get("/{project_id}/analysis/{analysis_id}/rev/{rev_number}")
+def revision_permalink(project_id: int, analysis_id: int, rev_number: int,
+                       db: Session = Depends(get_db),
+                       user: User = Depends(require_user)):
+    """A shareable link to one filed revision.
+
+    Lands on the project page rather than the analysis page: a revision's
+    documents are durable, but its editable working directory may not be, so the
+    project page is the surface that can always show what was sent. The row is
+    opened and highlighted client-side (sharelink.js).
+    """
+    rev = db.scalar(select(Revision).where(Revision.analysis_id == analysis_id,
+                                           Revision.rev_number == rev_number))
+    if rev is None or rev.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Revision not found")
+    return RedirectResponse(f"/projects/{project_id}#rev-{analysis_id}-{rev_number}",
+                            status_code=303)
 
 
 @router.get("/{project_id}/analysis/{analysis_id}/rev/{rev_number}/{filename}")

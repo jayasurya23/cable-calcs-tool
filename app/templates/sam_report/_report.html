@@ -71,11 +71,19 @@
     <div class="section-head">
       <h3>Output table <span class="dims">({{ report.runs | length }} runs,
         {{ report.runs[0].year }}–{{ report.runs[-1].year }})</span></h3>
-      {% if report.output_filename %}
-      <a class="btn btn-secondary btn-download"
-         href="/sam/download/{{ report.upload_id }}/{{ report.output_filename | urlencode }}"
-         download>⬇ Workbook with Output sheet</a>
-      {% endif %}
+      <span class="dl-group">
+        {% if report.source_workbook %}
+        <a class="btn btn-secondary btn-download"
+           href="/sam/download/{{ report.upload_id }}/{{ report.source_workbook | urlencode }}"
+           download title="The Excel file exactly as you uploaded it">⬇ Source workbook</a>
+        {% endif %}
+        {% if report.output_filename %}
+        <a class="btn btn-secondary btn-download"
+           href="/sam/download/{{ report.upload_id }}/{{ report.output_filename | urlencode }}"
+           download title="Your workbook with the standardized Output sheet added"
+           >⬇ Workbook with Output sheet</a>
+        {% endif %}
+      </span>
     </div>
     <div class="table-wrap table-output">
       <table class="data-table">
@@ -125,6 +133,28 @@
 
   {# ── 4. Workbook data (raw sheets) ──────────────────────────────────── #}
   <div data-tab-panel="data" role="tabpanel" hidden>
+    {% if source_files %}
+    <h3>Your uploaded files</h3>
+    <p class="hint">Everything you supplied for this analysis, exactly as uploaded. These are
+      filed with every revision too, so they stay retrievable after the analysis is issued.</p>
+    {% for group in source_files %}
+    <div class="srcfiles">
+      <div class="srcfiles-head">{{ group.label }}</div>
+      {% for f in group.files %}
+      <a class="srcfile" download
+         href="/sam/download/{{ report.upload_id }}/{{ f.path | urlencode }}">
+        <span class="srcfile-icon" aria-hidden="true">{{ f.icon }}</span>
+        <span class="srcfile-text">
+          <span class="srcfile-label">{{ f.label }}</span>
+          <span class="srcfile-name">{{ f.name }}</span>
+        </span>
+        <span class="srcfile-dl" aria-hidden="true">⬇</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
     <h3>Workbook contents</h3>
     <p class="hint">Raw preview of every sheet in the uploaded workbook (first rows).</p>
     {% for sheet in report.sheets %}

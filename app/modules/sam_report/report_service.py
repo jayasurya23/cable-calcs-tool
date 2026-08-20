@@ -202,6 +202,54 @@ def render_collated(combined: Analysis, source_analyses: list[Analysis],
         Path(tmp_pdf).unlink(missing_ok=True)
 
 
+def source_files(upload_id: str) -> list[dict]:
+    """Everything the engineer supplied for this analysis, grouped by module and
+    labelled by what each file is.
+
+    The uploads were always kept — they are copied into every filed revision —
+    but nothing on the analysis page offered them back, so the only workbook a
+    person could retrieve was the one we generated. Reaching the original meant
+    digging through a revision's undifferentiated file list on the project page.
+    """
+    from app.modules.projects import storage as rev_storage
+
+    dest_dir = _upload_dir(upload_id)
+    meta = _load_upload_meta(dest_dir)
+    groups: list[dict] = []
+
+    for i, entry in enumerate(load_modules(upload_id)):
+        names: list[str] = []
+
+        def add(name):
+            if name and name not in names and (dest_dir / name).is_file():
+                names.append(name)
+
+        workbook = entry.get("path")
+        add(workbook)
+        if workbook:                     # the Output copy we wrote alongside it
+            wb = Path(workbook)
+            add(f"{wb.stem} - Output{wb.suffix}")
+        add(entry.get("pysam"))
+        add(entry.get("datasheet"))
+        if i == 0:
+            # Module 1's pysam / datasheet are recorded on the upload itself
+            # rather than on its module entry.
+            add(meta.get("pysam"))
+            add(meta.get("datasheet"))
+        if names:
+            groups.append({"label": entry.get("label") or f"Module {i + 1}",
+                           "files": rev_storage.describe_files(names)})
+
+    # Datasheets attached to the report as a whole (appended to the PDF), which
+    # belong to no single module.
+    extra = [d["path"] for d in load_datasheets(upload_id)
+             if (dest_dir / d["path"]).is_file()]
+    if extra:
+        groups.append({"label": "Appended datasheets",
+                       "files": rev_storage.describe_files(extra)})
+    return groups
+
+
 def collect_revision_files(upload_id: str) -> list[Path]:
     """Every document worth filing with a revision: the generated report
     (docx + pdf), the standardized Output workbook, and all inputs."""
@@ -214,12 +262,21 @@ def collect_revision_files(upload_id: str) -> list[Path]:
         files.append(wb.with_name(f"{wb.stem} - Output{wb.suffix}"))
     if meta.get("pysam"):
         files.append(dest_dir / meta["pysam"])
+    # Module 1's datasheet is recorded on the upload itself rather than on a
+    # module entry, so walking modules[1:] skipped it — the analysis page tells
+    # the engineer every uploaded file is kept with each revision, and a
+    # third-party datasheet PDF is the least replaceable thing here.
+    if meta.get("datasheet"):
+        files.append(dest_dir / meta["datasheet"])
     for entry in load_modules(upload_id)[1:]:  # extra module workbooks (+ their pysam)
         files.append(dest_dir / entry["path"])
         if entry.get("pysam"):
             files.append(dest_dir / entry["pysam"])
         if entry.get("datasheet"):
             files.append(dest_dir / entry["datasheet"])
+    # Datasheets appended to the report as a whole belong to no single module.
+    for sheet in load_datasheets(upload_id):
+        files.append(dest_dir / sheet["path"])
     return [f for f in files if f.is_file()]
 
 

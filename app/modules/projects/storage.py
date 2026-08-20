@@ -3,6 +3,7 @@ data/projects/<project_id>/rev<N>/ with a DB record + audit trail."""
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -16,6 +17,84 @@ from app.core.models import Analysis, AuditEvent, Project, Revision, User
 
 # A filed revision must at minimum contain the issued report documents.
 REQUIRED_DOCS = {"SAM Report.docx", "SAM Report.pdf"}
+
+# Everything a revision can hold, in the order an engineer wants to see it.
+# A revision folder is a flat list of filenames, which told the reader nothing:
+# "SAM excel output.xlsx" and "SAM excel output - Output.xlsx" sat side by side
+# with no hint that one is what they uploaded and the other is what we produced.
+_OUTPUT_SUFFIX = " - Output"
+
+
+def describe_file(name: str, stored: str | None = None,
+                  siblings: set[str] | None = None) -> dict:
+    """What a filed document IS, for labelling a download link.
+
+    Returns {kind, label, icon, rank} — `rank` orders a revision's files so the
+    issued report comes first and raw inputs last.
+
+    `stored` is the name on disk when it differs from the display name; the
+    issued-report test uses it, because an engineer's own file named
+    "<hash>_SAM Report.pdf" strips to "SAM Report.pdf" and was being mistaken for
+    the deliverable. `siblings` is the display names of the other files filed
+    alongside, used to tell a generated "- Output" copy from a source workbook
+    the engineer happened to name that way.
+    """
+    low = (name or "").lower()
+    stem = Path(name or "").stem
+
+    if (stored if stored is not None else name) in REQUIRED_DOCS:
+        if low.endswith(".pdf"):
+            return {"kind": "report-pdf", "label": "Report (PDF)", "icon": "📕", "rank": 0}
+        return {"kind": "report-docx", "label": "Report (Word)", "icon": "📘", "rank": 1}
+
+    if low.endswith((".xlsx", ".xlsm")):
+        # We generate "<source stem> - Output<ext>" NEXT TO the source, so it is
+        # only the generated copy when that source is also here. Otherwise the
+        # engineer simply named their own workbook that way, and calling it our
+        # output meant no source workbook was offered at all.
+        if stem.endswith(_OUTPUT_SUFFIX):
+            origin = stem[: -len(_OUTPUT_SUFFIX)] + Path(name).suffix
+            if siblings is None or origin in siblings:
+                return {"kind": "output-workbook",
+                        "label": "Workbook with Output sheet", "icon": "📊", "rank": 2}
+        return {"kind": "source-workbook",
+                "label": "Source workbook (as uploaded)", "icon": "📗", "rank": 3}
+
+    if low.endswith(".json"):
+        return {"kind": "pysam", "label": "pysam inputs (JSON)", "icon": "🧾", "rank": 4}
+    if low.endswith(".pdf"):
+        return {"kind": "datasheet", "label": "Datasheet (PDF)", "icon": "📄", "rank": 5}
+    return {"kind": "other", "label": "Supporting file", "icon": "📎", "rank": 6}
+
+
+# Extra module workbooks are staged (and filed) as "<8 hex>_<original name>".
+# That prefix keeps two modules with the same filename apart on disk; it is not
+# something an engineer should have to read.
+_STAGED_PREFIX = re.compile(r"^[0-9a-f]{8}_")
+
+
+def display_name(name: str) -> str:
+    return _STAGED_PREFIX.sub("", Path(name or "").name)
+
+
+def describe_files(names) -> list[dict]:
+    """Every filed document, labelled and ordered.
+
+    Each item carries `name` (what to show) and `path` (what to ask for). They
+    differ for an extra module's workbook, which is stored under a subdirectory
+    and a hashed filename.
+    """
+    names = list(names or [])
+    shown_all = {display_name(n) for n in names}
+    out = []
+    for i, n in enumerate(names):
+        shown = display_name(n)
+        out.append({**describe_file(shown, stored=Path(n).name, siblings=shown_all),
+                    "name": shown, "path": n, "order": i})
+    # Displayed grouped by kind; `order` preserves how they were filed, which is
+    # the only thing that identifies module 1's workbook among several sources.
+    out.sort(key=lambda d: (d["rank"], d["name"].lower()))
+    return out
 
 
 def revision_dir(analysis: Analysis, rev_number: int) -> Path:

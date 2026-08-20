@@ -196,9 +196,17 @@ async def upload(
         ctx.update(project=prefill, analysis=analysis,
                    modules=report_service.load_modules(report.upload_id),
                    datasheets=report_service.load_datasheets(report.upload_id),
+                   source_files=report_service.source_files(report.upload_id),
                    previews=previews, stats=stats,
                    revisions=revisions, next_rev=next_rev)
-    return templates.TemplateResponse(request, "sam_report/_report.html", ctx)
+    resp = templates.TemplateResponse(request, "sam_report/_report.html", ctx)
+    # Creating a run swaps the report in over HTMX, which leaves the address bar
+    # on the generic /sam?project=N. The engineer was then looking at a real
+    # analysis with nothing in the URL to send anyone. Push its canonical link so
+    # the page they are on is the page they can share (and reload, and bookmark).
+    if ctx.get("analysis") is not None:
+        resp.headers["HX-Push-Url"] = f"/sam/analysis/{ctx['analysis'].id}"
+    return resp
 
 
 @router.post("/equipment/{upload_id}", response_class=HTMLResponse)
@@ -408,6 +416,7 @@ def open_analysis(request: Request, analysis_id: int,
         "project": prefill, "analysis": analysis,
         "modules": report_service.load_modules(upload_id),
         "datasheets": report_service.load_datasheets(upload_id),
+        "source_files": report_service.source_files(upload_id),
         "previews": previews, "stats": stats,
         "revisions": revisions, "next_rev": next_rev,
     })
@@ -943,18 +952,48 @@ async def module_remove(request: Request, module_id: str,
     return _list_fragment(request, await run_in_threadpool(_delete))
 
 
-@router.get("/download/{upload_id}/{filename}")
+# Content types for the files an analysis holds. mimetypes alone doesn't know
+# the Office XML types on every platform, so the ones we serve are pinned.
+_DOWNLOAD_TYPES = {
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pdf": "application/pdf",
+    ".json": "application/json",
+    ".csv": "text/csv",
+}
+
+
+# `:path` so "modules/<hash>_<name>.xlsx" matches; containment is enforced below.
+@router.get("/download/{upload_id}/{filename:path}")
 def download(upload_id: str, filename: str):
-    """Serve a generated workbook from an upload's staging directory."""
+    """Serve one of an analysis's files — the workbook the engineer uploaded, the
+    Output copy we generated, its pysam JSON, or a module datasheet."""
     upload_root = Path(settings.upload_dir).resolve()
-    # upload_id is a hex token we minted; filename must stay within its folder.
+    # upload_id is a hex token we minted; the file must stay within ITS folder.
     if not upload_id.isalnum():
         raise HTTPException(status_code=404, detail="Not found")
-    path = (upload_root / upload_id / Path(filename).name).resolve()
-    if not path.is_file() or upload_root not in path.parents:
-        raise HTTPException(status_code=404, detail="Not found")
+    base = (upload_root / upload_id).resolve()
+    # Extra module workbooks are staged as "modules/<hash>_<name>.xlsx", so the
+    # name alone is not enough to find them — a relative path is allowed, but it
+    # is resolved and then required to still sit inside this upload's directory,
+    # which rejects "../" escapes and any attempt to read a different upload.
+    # resolve() itself raises on an embedded NUL, which would 500 where every
+    # other bad input here returns a clean 404.
+    try:
+        path = (base / filename).resolve()
+        if not path.is_file() or not path.is_relative_to(base):
+            raise HTTPException(status_code=404, detail="Not found")
+    except (ValueError, OSError):
+        raise HTTPException(status_code=404, detail="Not found") from None
+    # This route used to declare every file as .xlsx, which was harmless while it
+    # only ever served the Output workbook. It now also serves JSON and PDFs.
+    # Save it under the name the page showed, not our internal staging name —
+    # otherwise the file that lands in Downloads is "3f2a1b9c_Site B.xlsx" and
+    # gets forwarded to a client with the hash still attached.
+    from app.modules.projects.storage import display_name
     return FileResponse(
         path,
-        filename=path.name,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=display_name(path.name),
+        media_type=_DOWNLOAD_TYPES.get(path.suffix.lower(), "application/octet-stream"),
     )

@@ -24,6 +24,8 @@
   <p class="work-sub">
     <a href="/projects/{{ project_rec.id }}">{{ project_rec.name }}</a>
     · next revision <b>R{{ next_rev }}</b> · earlier revisions are kept
+    <button class="btn-copylink" type="button" data-copy-link="/sam/analysis/{{ analysis.id }}"
+            title="Copy a link to this analysis — anyone signed in can open it">🔗 Copy link</button>
   </p>
 </section>
 
@@ -52,6 +54,8 @@
         <b>R{{ r.rev_number }}</b>
         <span class="dims">{{ r.created_at.strftime("%Y-%m-%d") }}{% if r.label %} · {{ r.label }}{% endif %}</span>
         {% if d.pdf %}<a class="doc-link" href="/projects/{{ project_rec.id }}/analysis/{{ analysis.id }}/rev/{{ r.rev_number }}/{{ d.pdf | urlencode }}">PDF</a>{% endif %}
+        <button class="btn-copylink" type="button" title="Copy a link to this revision"
+                data-copy-link="/projects/{{ project_rec.id }}/analysis/{{ analysis.id }}/rev/{{ r.rev_number }}">🔗</button>
       </div>
       {% endfor %}
     </div>

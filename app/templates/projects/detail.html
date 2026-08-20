@@ -14,7 +14,10 @@
     {% if project.code %}<span class="dims">· {{ project.code }}</span>{% endif %}
     {% if project.status != "active" %}<span class="pill pill-muted">archived</span>{% endif %}
   </h1>
-  <p class="subtitle">Created {{ project.created_at.strftime("%Y-%m-%d") }}{% if project.creator %} by {{ project.creator.name }}{% endif %}</p>
+  <p class="subtitle">Created {{ project.created_at.strftime("%Y-%m-%d") }}{% if project.creator %} by {{ project.creator.name }}{% endif %}
+    <button class="btn-copylink" type="button" data-copy-link="/projects/{{ project.id }}"
+            title="Copy a link to this project">🔗 Copy link</button>
+  </p>
 </section>
 
 {% if saved %}<div class="notice-ok">✓ Project saved</div>{% endif %}
@@ -61,6 +64,8 @@
         {% else %}
         <a class="btn btn-sm btn-secondary" href="/sam/analysis/{{ a.id }}">Edit &amp; re-run</a>
         {% endif %}
+        <button class="btn-copylink" type="button" data-copy-link="/sam/analysis/{{ a.id }}"
+                title="Copy a link to this analysis">🔗 Copy link</button>
         <form method="post" action="/projects/{{ project.id }}/analysis/{{ a.id }}/delete"
               onsubmit="return confirm('Delete this analysis and all its revisions? This cannot be undone.');"
               style="display:inline">
@@ -81,6 +86,10 @@
       <a class="doc-link"
          href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ latest.rev_number }}/{{ ld.docx | urlencode }}">Word (.docx)</a>
       {% endif %}
+      {% if ld.source %}
+      <a class="doc-link" title="{{ ld.source_name }} — the Excel file this revision was built from, as uploaded"
+         href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ latest.rev_number }}/{{ ld.source | urlencode }}">Source workbook (.xlsx)</a>
+      {% endif %}
       <span class="dl-meta">Current deliverable · <b>R{{ latest.rev_number }}</b>{% if latest.label %} · {{ latest.label }}{% endif %}
         · filed <time datetime="{{ latest.created_at.isoformat() }}Z" class="js-localdate">{{ latest.created_at.strftime("%Y-%m-%d") }}</time>{% if latest.creator %} by {{ latest.creator.name }}{% endif %}</span>
     </div>
@@ -93,8 +102,12 @@
           <tbody>
             {% for r in revs %}
             {% set d = rev_docs[r.id] %}
-            <tr>
-              <td><b>R{{ r.rev_number }}</b>{% if loop.first %}<span class="pill pill-current">current</span>{% endif %}</td>
+            {# id is the permalink target: /projects/N/analysis/A/rev/R redirects
+               to #rev-A-R, which sharelink.js opens and highlights. #}
+            <tr id="rev-{{ a.id }}-{{ r.rev_number }}">
+              <td><b>R{{ r.rev_number }}</b>{% if loop.first %}<span class="pill pill-current">current</span>{% endif %}
+                <button class="btn-copylink" type="button" title="Copy a link to this revision"
+                        data-copy-link="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}">🔗</button></td>
               <td><time datetime="{{ r.created_at.isoformat() }}Z" class="js-localdate">{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</time></td>
               <td>{{ r.creator.name if r.creator else "—" }}</td>
               <td>{{ r.label or "—" }}</td>
@@ -103,11 +116,16 @@
                 {% if d.pdf %}
                 <a class="doc-link" href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}/{{ d.pdf | urlencode }}">{{ d.pdf }}</a>
                 {% endif %}
-                {% if d.others %}
+                {% if d.described %}
                 <details class="support-files">
-                  <summary>Supporting files ({{ d.others | length }})</summary>
-                  {% for f in d.others %}
-                  <a class="doc-link" href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}/{{ f | urlencode }}">{{ f }}</a>
+                  <summary>Supporting files ({{ d.described | length }})</summary>
+                  {% for f in d.described %}
+                  {# The filename is shown as well as the label: a multi-module
+                     revision holds several source workbooks, and the label alone
+                     makes them indistinguishable. #}
+                  <a class="doc-link" title="{{ f.name }}"
+                     href="/projects/{{ project.id }}/analysis/{{ a.id }}/rev/{{ r.rev_number }}/{{ f.path | urlencode }}">{{ f.icon }} {{ f.label }}
+                    <span class="dims">{{ f.name }}</span></a>
                   {% endfor %}
                 </details>
                 {% endif %}

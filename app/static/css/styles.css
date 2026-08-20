@@ -739,3 +739,42 @@ body.layout-wide .content { max-width: 1560px; }
 /* Where an add reports back, inside the Add tab. */
 .add-notice:not(:empty) { margin-bottom: 14px; }
 .add-notice .notice-ok, .add-notice .warning { margin: 0; }
+
+/* ── Analysis: the files the engineer uploaded, offered back ───────── */
+.dl-group { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.srcfiles { margin: 0 0 14px; }
+.srcfiles-head {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); margin: 0 0 6px;
+}
+.srcfile {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; margin-bottom: 6px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; text-decoration: none; color: var(--text);
+}
+.srcfile:hover { border-color: var(--crimson); }
+.srcfile-icon { font-size: 16px; line-height: 1; }
+.srcfile-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.srcfile-label { font-size: 13px; font-weight: 600; }
+.srcfile-name {
+  font-size: 12px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.srcfile-dl { color: var(--muted); font-size: 14px; }
+.srcfile:hover .srcfile-dl { color: var(--crimson); }
+
+/* ── Shareable links ───────────────────────────────────────────────── */
+.btn-copylink {
+  background: transparent; border: 1px solid var(--line); color: var(--muted);
+  border-radius: 6px; padding: 2px 8px; margin-left: 8px;
+  font-family: inherit; font-size: 12px; line-height: 1.6; cursor: pointer;
+  vertical-align: middle; white-space: nowrap;
+}
+.btn-copylink:hover { color: var(--text); border-color: var(--crimson); }
+.btn-copylink.copied { color: #7dd67d; border-color: #2e7d32; }
+/* The row a shared revision link points at. */
+.linked-target > td, .linked-target {
+  background: rgba(220, 20, 60, .14) !important;
+  scroll-margin-top: 90px;
+}
