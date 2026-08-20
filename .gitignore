@@ -10,3 +10,7 @@ deploy/config.env
 
 # Local dev launch config (machine-specific scratchpad paths)
 .claude/
+
+# Stray SQLite files from local runs (the dev DB lives under _data/).
+*.db
+*.db-journal
