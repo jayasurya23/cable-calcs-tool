@@ -789,3 +789,13 @@ body.layout-wide .content { max-width: 1560px; }
 .filed-under a { color: var(--text); }
 .filed-under .rev-mini { margin-left: auto; }
 .hier-cell { color: var(--muted); font-size: 12px; }
+
+/* Bulk-filing projects into a client or portfolio. */
+.adopt-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px; margin-bottom: 12px; }
+.adopt-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px;
+  border-radius: 6px; cursor: pointer; font-size: 13px; }
+.adopt-row:hover { background: var(--panel-2); }
+.adopt-row input { margin: 0; }
+.adopt-name { flex: 1; min-width: 0; }
+.adopt-row .hier-cell { margin-left: auto; text-align: right; }

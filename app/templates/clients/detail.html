@@ -22,6 +22,9 @@
 </section>
 
 {% if request.query_params.get("saved") %}<div class="notice-ok">✓ Client saved</div>{% endif %}
+{% if request.query_params.get("moved") %}<div class="notice-ok">✓ Filed {{ request.query_params.get("moved") }} project(s) under this client.</div>{% endif %}
+{% if request.query_params.get("error") == "duplicate" %}
+<div class="warning">⚠ A portfolio with that name already exists for this client.</div>{% endif %}
 {% if request.query_params.get("error") == "name" %}
 <div class="warning">⚠ A portfolio needs a name.</div>{% endif %}
 {% if request.query_params.get("error") == "notempty" %}
@@ -70,6 +73,33 @@
 </div>
 {% else %}
 <p class="hint">None — every project of this client is filed under a portfolio.</p>
+{% endif %}
+
+{% set adopt_action = "/clients/" ~ client.id ~ "/adopt" %}
+{% if adoptable %}
+<div class="form-section" style="margin-top:22px">
+  <h4>File projects here</h4>
+  <p class="hint">Tick the projects that belong here and move them in one go —
+    the migration parked existing projects under <b>Unassigned</b>.</p>
+  <form method="post" action="{{ adopt_action }}">
+    <div class="adopt-list">
+      {% for p in adoptable %}
+      <label class="adopt-row">
+        <input type="checkbox" name="project_ids" value="{{ p.id }}">
+        <span class="adopt-name">{{ p.name }}{% if p.code %} <span class="dims">{{ p.code }}</span>{% endif %}</span>
+        <span class="hier-cell">
+          {% if p.client %}{{ p.client.name }}{% if p.portfolio %} › {{ p.portfolio.name }}{% endif %}
+          {% else %}no client{% endif %}
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="lib-edit-actions">
+      <button class="btn btn-primary btn-sm" type="submit">Move selected here</button>
+      <button class="btn btn-secondary btn-sm" type="button" data-check-all=".adopt-list">Select all</button>
+    </div>
+  </form>
+</div>
 {% endif %}
 
 <div class="form-section" style="margin-top:26px">

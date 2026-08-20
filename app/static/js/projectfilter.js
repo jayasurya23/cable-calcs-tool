@@ -108,6 +108,19 @@
     if (!stillValid) portfolio.value = "";          // don't carry a foreign portfolio over
   }
 
+  // "Select all" on a bulk-file list. Toggles, so a second press clears it.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("[data-check-all]");
+    if (!btn) return;
+    e.preventDefault();
+    var list = document.querySelector(btn.getAttribute("data-check-all"));
+    if (!list) return;
+    var boxes = list.querySelectorAll('input[type="checkbox"]');
+    var turnOn = Array.prototype.some.call(boxes, function (b) { return !b.checked; });
+    Array.prototype.forEach.call(boxes, function (b) { b.checked = turnOn; });
+    btn.textContent = turnOn ? "Clear selection" : "Select all";
+  });
+
   document.addEventListener("change", function (e) {
     if (e.target && e.target.id === "move-client") syncPortfolios();
   });

@@ -17,6 +17,10 @@
 {% if request.query_params.get("error") == "name" %}
 <div class="warning">⚠ A client needs a name.</div>
 {% endif %}
+{% if request.query_params.get("error") == "duplicate" %}
+<div class="warning">⚠ A client with that name already exists — two clients with the same
+  name are impossible to tell apart in the Move dropdowns.</div>
+{% endif %}
 
 <form class="new-project-form" id="new-client-form" method="post" action="/clients" hidden>
   <label>Client name<input name="name" required placeholder="e.g. Silicon Ranch"></label>

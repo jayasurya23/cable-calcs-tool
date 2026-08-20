@@ -21,6 +21,15 @@ _COVER_FIELDS = ["owner_name", "owner_phone", "epc_name", "epc_phone",
                  "eng_firm_name", "eng_firm_phone", "eor", "designer", "checker"]
 
 
+def _int_or_none(value) -> int | None:
+    """An id from a form, or None. str.isdigit() accepts characters int() will
+    not (superscripts, circled digits), so parse rather than pre-check."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 class ProjectNotFound(Exception):
     """Raised instead of a bare 404 so the handler can render a page with a way out."""
 
@@ -84,13 +93,34 @@ def project_list(request: Request, db: Session = Depends(get_db),
                                  default=p.created_at),
         }
     return templates.TemplateResponse(request, "projects/list.html",
-                                      {"projects": projects, "stats": stats})
+                                      {"projects": projects, "stats": stats,
+                                       "all_clients": db.scalars(
+                                           select(Client).order_by(Client.name)).all(),
+                                       "all_portfolios": db.scalars(
+                                           select(Portfolio).order_by(Portfolio.name)).all()})
 
 
 @router.post("")
 def project_create(db: Session = Depends(get_db), user: User = Depends(require_user),
-                   name: str = Form(...), code: str = Form("")):
-    project = Project(name=name.strip(), code=code.strip(), created_by=user.id)
+                   name: str = Form(...), code: str = Form(""),
+                   client_id: str = Form(""), portfolio_id: str = Form("")):
+    """Create a project, filed under a client (and optionally a portfolio).
+
+    The hierarchy is only useful if new work lands in it. Before, this set no
+    parent at all, so every project created after the hierarchy shipped was
+    invisible in the client navigation.
+    """
+    cid = _int_or_none(client_id)
+    pid = _int_or_none(portfolio_id)
+    if cid is not None and db.get(Client, cid) is None:
+        cid = None
+    if pid is not None:
+        pf = db.get(Portfolio, pid)
+        # A portfolio only counts if it belongs to the chosen client.
+        pid = pid if (pf is not None and pf.client_id == cid) else None
+
+    project = Project(name=name.strip(), code=code.strip(), created_by=user.id,
+                      client_id=cid, portfolio_id=pid)
     db.add(project)
     db.flush()
     db.add(AuditEvent(user_id=user.id, project_id=project.id,
@@ -188,8 +218,8 @@ def project_move(project_id: int, client_id: str = Form(""),
     otherwise a project could show up under a portfolio of some other client.
     """
     project = _get_project(db, project_id)
-    cid = int(client_id) if str(client_id).isdigit() else None
-    pid = int(portfolio_id) if str(portfolio_id).isdigit() else None
+    cid = _int_or_none(client_id)
+    pid = _int_or_none(portfolio_id)
     if cid is None or db.get(Client, cid) is None:
         return RedirectResponse(f"/projects/{project_id}?error=client", status_code=303)
     if pid is not None:

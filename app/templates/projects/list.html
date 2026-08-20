@@ -14,6 +14,18 @@
 <form method="post" action="/projects" class="new-project-form" id="new-project-form" hidden>
   <input name="name" placeholder="New project name (e.g. Franklin Solar, LLC)" required>
   <input name="code" placeholder="Project ID (e.g. 259-034)" style="max-width:160px">
+  {# Without a client here, a new project would be invisible in the client
+     navigation and show only as "no client yet". #}
+  <select name="client_id" id="move-client" {% if all_clients %}required{% endif %}>
+    <option value="">{% if all_clients %}— client —{% else %}no clients yet{% endif %}</option>
+    {% for c in all_clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+  </select>
+  <select name="portfolio_id" id="move-portfolio">
+    <option value="">— no portfolio —</option>
+    {% for pf in all_portfolios %}
+    <option value="{{ pf.id }}" data-client="{{ pf.client_id }}">{{ pf.name }}</option>
+    {% endfor %}
+  </select>
   <button class="btn btn-primary">Create project</button>
 </form>
 

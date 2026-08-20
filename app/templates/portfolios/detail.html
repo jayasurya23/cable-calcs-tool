@@ -23,6 +23,9 @@
 </section>
 
 {% if request.query_params.get("saved") %}<div class="notice-ok">✓ Portfolio saved</div>{% endif %}
+{% if request.query_params.get("moved") %}<div class="notice-ok">✓ Filed {{ request.query_params.get("moved") }} project(s) into this portfolio.</div>{% endif %}
+{% if request.query_params.get("error") == "duplicate" %}
+<div class="warning">⚠ This client already has a portfolio with that name.</div>{% endif %}
 {% if request.query_params.get("error") == "notempty" %}
 <div class="warning">⚠ This portfolio still has projects in it. Move them out first — deleting it
   would take their analyses and filed reports with it.</div>
@@ -42,6 +45,33 @@
 <div class="lib-empty">
   <p><b>No projects in this portfolio yet.</b></p>
   <p class="hint">Open a project and use <b>Move</b> to file it here.</p>
+</div>
+{% endif %}
+
+{% set adopt_action = "/portfolios/" ~ portfolio.id ~ "/adopt" %}
+{% if adoptable %}
+<div class="form-section" style="margin-top:22px">
+  <h4>File projects here</h4>
+  <p class="hint">Tick the projects that belong here and move them in one go —
+    the migration parked existing projects under <b>Unassigned</b>.</p>
+  <form method="post" action="{{ adopt_action }}">
+    <div class="adopt-list">
+      {% for p in adoptable %}
+      <label class="adopt-row">
+        <input type="checkbox" name="project_ids" value="{{ p.id }}">
+        <span class="adopt-name">{{ p.name }}{% if p.code %} <span class="dims">{{ p.code }}</span>{% endif %}</span>
+        <span class="hier-cell">
+          {% if p.client %}{{ p.client.name }}{% if p.portfolio %} › {{ p.portfolio.name }}{% endif %}
+          {% else %}no client{% endif %}
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="lib-edit-actions">
+      <button class="btn btn-primary btn-sm" type="submit">Move selected here</button>
+      <button class="btn btn-secondary btn-sm" type="button" data-check-all=".adopt-list">Select all</button>
+    </div>
+  </form>
 </div>
 {% endif %}
 

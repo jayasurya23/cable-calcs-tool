@@ -96,36 +96,44 @@ def _migrate(conn) -> None:
     #    they land under a single "Unassigned" client for someone to sort later
     #    — deliberately NOT guessed from owner_name, which is a cover-sheet field
     #    filled in loosely and would produce plausible-looking wrong parents.
+    # Ask the catalog BEFORE altering. "ADD COLUMN IF NOT EXISTS" still takes an
+    # ACCESS EXCLUSIVE lock on `projects` to discover it has nothing to do, and
+    # init_db() runs on every worker at every start — so on a normal restart that
+    # lock would queue behind any in-flight request holding the table, and block
+    # every reader behind it. Checking first makes the steady state lock-free.
     if d == "postgresql":
-        conn.exec_driver_sql(
-            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_id INTEGER "
-            "REFERENCES clients(id)")
-        conn.exec_driver_sql(
-            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS portfolio_id INTEGER "
-            "REFERENCES portfolios(id)")
-        # create_all only indexes tables it creates, and `projects` already
-        # exists — so the index=True on the model would never take effect here.
-        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_client_id "
-                             "ON projects (client_id)")
-        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_portfolio_id "
-                             "ON projects (portfolio_id)")
+        existing = {r[0] for r in conn.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'projects'")).fetchall()}
     else:
-        cols = {r[1] for r in conn.exec_driver_sql("PRAGMA table_info(projects)").fetchall()}
-        if "client_id" not in cols:
-            conn.exec_driver_sql(
-                "ALTER TABLE projects ADD COLUMN client_id INTEGER REFERENCES clients(id)")
-        if "portfolio_id" not in cols:
-            conn.exec_driver_sql(
-                "ALTER TABLE projects ADD COLUMN portfolio_id INTEGER REFERENCES portfolios(id)")
+        existing = {r[1] for r in conn.exec_driver_sql(
+            "PRAGMA table_info(projects)").fetchall()}
+
+    fresh_client_col = "client_id" not in existing
+    if fresh_client_col:
+        conn.exec_driver_sql(
+            "ALTER TABLE projects ADD COLUMN client_id INTEGER REFERENCES clients(id)")
+    if "portfolio_id" not in existing:
+        conn.exec_driver_sql(
+            "ALTER TABLE projects ADD COLUMN portfolio_id INTEGER REFERENCES portfolios(id)")
+    if fresh_client_col or "portfolio_id" not in existing:
+        # create_all only indexes tables it creates, and `projects` already
+        # exists — so the index=True on the model never takes effect here.
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_client_id "
                              "ON projects (client_id)")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_portfolio_id "
                              "ON projects (portfolio_id)")
 
-    if conn.execute(text(
+    # Backfill ONLY on the run that introduced the column. Sweeping every
+    # client-less project on every start is not a migration — it silently
+    # re-parents projects created since, and hides the "no client yet" state the
+    # UI reports. After this run, an unfiled project stays unfiled until a person
+    # files it.
+    if fresh_client_col and conn.execute(text(
             "SELECT 1 FROM projects WHERE client_id IS NULL LIMIT 1")).fetchone():
         unassigned = conn.execute(text(
-            "SELECT id FROM clients WHERE name = :n"), {"n": UNASSIGNED_CLIENT}).scalar()
+            "SELECT id FROM clients WHERE name = :n ORDER BY id LIMIT 1"),
+            {"n": UNASSIGNED_CLIENT}).scalar()
         if unassigned is None:
             ins = text(
                 "INSERT INTO clients (name, code, status, notes, created_at) "
@@ -154,6 +162,11 @@ def init_db() -> None:
     from app.core import models  # noqa: F401
     if engine.dialect.name == "postgresql":
         with engine.begin() as conn:
+            # Never wait indefinitely for a table lock. A report generation holds
+            # its transaction open across a LibreOffice conversion, and an ALTER
+            # queued behind it blocks every later reader too. Failing fast and
+            # letting the next worker retry beats stalling the whole app.
+            conn.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
             conn.exec_driver_sql("SELECT pg_advisory_xact_lock(727274)")
             Base.metadata.create_all(conn)
             _migrate(conn)
