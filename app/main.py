@@ -131,12 +131,16 @@ def health():
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, user: User = Depends(require_user)):
     """Landing page / module launcher."""
+    # These cards are a launcher for what the tool DOES, so each one names a
+    # capability. "Projects" named a navigation level instead — and since clients
+    # and portfolios now sit above projects, it was not even the top of the tree.
     modules = [
         {
-            "name": "Projects",
+            "name": "SAM Analysis Reports",
             "href": "/projects",
-            "desc": "Project control: cover-sheet details, SAM analyses, and the "
-                    "revision history of every generated document.",
+            "desc": "Turn a SAM runs workbook into the issued analysis report — "
+                    "Word and PDF, filed as numbered revisions with every input "
+                    "kept. Organised under clients, portfolios and projects.",
             "ready": True,
         },
         {
